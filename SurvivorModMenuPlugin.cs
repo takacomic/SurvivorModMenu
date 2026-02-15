@@ -15,6 +15,13 @@ internal static class BuildInfo
 
 public sealed class SurvivorModMenuPlugin : MelonPlugin
 {
+    public override void OnInitializeMelon()
+    {
+#if DEBUG
+        DebugTestSettings.Register();
+#endif
+    }
+
     public override void OnUpdate()
     {
         ModMenuController.Update();

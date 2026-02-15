@@ -5,7 +5,8 @@
 It provides:
 - a registry for top-level mod entries
 - supplemental sections so multiple systems can contribute UI to the same mod entry
-- a simple builder API for labels, toggles, and spacing
+- a builder API for labels, toggles, typed fields, sliders, dropdowns, and spacing
+- fully custom controls (no cloned game menu buttons)
 
 ## License
 
@@ -52,6 +53,10 @@ private static void BuildMyModMenu(ModMenuBuilder builder)
 {
     builder.AddLabel("My Mod Settings");
     builder.AddToggle("Enable Feature", () => FeatureEnabled, value => FeatureEnabled = value);
+    builder.AddIntField("Enemy Limit", () => EnemyLimit, value => EnemyLimit = value, 1, 999);
+    builder.AddFloatSlider("Spawn Multiplier", () => SpawnMultiplier, value => SpawnMultiplier = value, 0.5f, 3f);
+    builder.AddStringField("Player Tag", () => PlayerTag, value => PlayerTag = value);
+    builder.AddDropdown("Difficulty", DifficultyOptions, () => DifficultyIndex, value => DifficultyIndex = value);
 }
 ```
 
@@ -94,6 +99,14 @@ Supplement APIs:
 Section builder interface:
 - `IModMenuSectionBuilder.AddLabel(string text, float fontSizeDelta = 0f)`
 - `IModMenuSectionBuilder.AddToggle(string label, Func<bool> getValue, Action<bool> setValue)`
+- `IModMenuSectionBuilder.AddStringField(...)`
+- `IModMenuSectionBuilder.AddIntField(...)`
+- `IModMenuSectionBuilder.AddFloatField(...)`
+- `IModMenuSectionBuilder.AddDoubleField(...)`
+- `IModMenuSectionBuilder.AddIntSlider(...)`
+- `IModMenuSectionBuilder.AddFloatSlider(...)`
+- `IModMenuSectionBuilder.AddDoubleSlider(...)`
+- `IModMenuSectionBuilder.AddDropdown(...)`
 - `IModMenuSectionBuilder.AddSpacer(float height)`
 
 ## Notes
@@ -101,3 +114,6 @@ Section builder interface:
 - `id` should be stable and unique per mod.
 - Re-registering the same `id` + `sectionId` replaces that section.
 - The plugin updates itself in `OnUpdate` and discovers/builds UI automatically.
+- Dropdowns open an inline list of options.
+- Float/double sliders use `0.01` step and include manual numeric input fields.
+- Typed field and slider input submission is processed on Enter.
