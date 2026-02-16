@@ -1,9 +1,6 @@
-using System;
-using System.Collections.Generic;
 using Il2CppTMPro;
-using UnityEngine.UI;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.ModMenu;
 
 /// <summary>
 /// Provides a restricted builder surface for supplement sections registered by mods.

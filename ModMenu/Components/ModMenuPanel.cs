@@ -1,16 +1,9 @@
-using System;
-using System.Collections.Generic;
-using MelonLoader;
-using UnityEngine;
-using UnityEngine.UI;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.ModMenu.Components;
 
 [RegisterTypeInIl2Cpp]
 public sealed class ModMenuPanel : MonoBehaviour
 {
-    private const float EnsureTraceIntervalSeconds = 1f;
-
     public ModMenuPanel(IntPtr ptr) : base(ptr)
     {
     }
@@ -22,7 +15,6 @@ public sealed class ModMenuPanel : MonoBehaviour
     private RectTransform _panelRect;
     private RectTransform _viewport;
     private RectMask2D _viewportMask;
-    private float _nextEnsureTraceTime;
 
     internal void Configure(ScrollRect scrollRect)
     {
@@ -252,7 +244,6 @@ public sealed class ModMenuPanel : MonoBehaviour
         if (content == null || viewport == null || !content.gameObject.activeInHierarchy ||
             !targetRect.gameObject.activeInHierarchy)
         {
-            TraceEnsureVisible(targetRect, moved: false, "missing-content-or-target");
             return false;
         }
 
@@ -277,7 +268,6 @@ public sealed class ModMenuPanel : MonoBehaviour
             movedAny = true;
         }
 
-        TraceEnsureVisible(targetRect, movedAny, movedAny ? "moved" : "no-op");
         return movedAny;
     }
 
@@ -498,26 +488,4 @@ public sealed class ModMenuPanel : MonoBehaviour
         return Mathf.Max(0f, maxY - minY);
     }
 
-    private void TraceEnsureVisible(RectTransform targetRect, bool moved, string state)
-    {
-#if DEBUG
-        if (Time.unscaledTime < _nextEnsureTraceTime)
-        {
-            return;
-        }
-
-        _nextEnsureTraceTime = Time.unscaledTime + EnsureTraceIntervalSeconds;
-        if (_scrollRect == null || _scrollRect.content == null || _viewport == null || targetRect == null)
-        {
-            MelonLogger.Msg($"[SurvivorModMenu][PanelEnsure] {state} missing refs moved={moved}");
-            return;
-        }
-
-        var contentY = _scrollRect.content.anchoredPosition.y;
-        var contentHeight = _scrollRect.content.rect.height;
-        var viewportHeight = _viewport.rect.height;
-        MelonLogger.Msg(
-            $"[SurvivorModMenu][PanelEnsure] {state} moved={moved} target={targetRect.name} contentY={contentY:F1} contentH={contentHeight:F1} viewportH={viewportHeight:F1}");
-#endif
-    }
 }

@@ -1,14 +1,10 @@
-using System;
-using System.Collections.Generic;
 using System.Globalization;
 using Il2CppInterop.Runtime;
 using Il2CppTMPro;
 using Il2CppVampireSurvivors.Graphics;
-using UnityEngine;
 using UnityEngine.Events;
-using UnityEngine.UI;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.ModMenu;
 
 /// <summary>
 /// Builds option rows for a single mod page inside SurvivorModMenu.

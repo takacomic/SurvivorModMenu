@@ -1,7 +1,6 @@
 using Il2CppTMPro;
-using UnityEngine;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.ModMenu;
 
 /// <summary>
 /// Captures a text template copied from the game's existing UI.

@@ -1,7 +1,7 @@
 #if DEBUG
-using MelonLoader;
+using SurvivorModMenu.ModMenu;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.Debugging;
 
 internal static class DebugTestSettings
 {

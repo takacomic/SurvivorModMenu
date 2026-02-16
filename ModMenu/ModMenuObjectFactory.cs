@@ -1,8 +1,6 @@
 using Il2CppTMPro;
-using UnityEngine;
-using UnityEngine.UI;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.ModMenu;
 
 internal static class ModMenuObjectFactory
 {

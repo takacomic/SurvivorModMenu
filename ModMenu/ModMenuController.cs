@@ -1,19 +1,15 @@
-using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Il2CppInterop.Runtime;
 using Il2CppTMPro;
 using Il2CppVampireSurvivors.Graphics;
 using Il2CppVampireSurvivors.UI;
-using MelonLoader;
-using UnityEngine;
+using SurvivorModMenu.ModMenu.Components;
 using UnityEngine.EventSystems;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
-using UnityEngine.UI;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.ModMenu;
 
 internal static class ModMenuController
 {
@@ -64,7 +60,7 @@ internal static class ModMenuController
     private const float ScrollbarEdgePadding = 4f;
     private const float TopPanelHeight = 90f;
     private const float BottomPanelPositionX = 65f;
-    private const float BottomPanelPositionY = -490f;
+    private const float BottomPanelPositionY = -485f;
     private const float TopPanelContentPadding = 2f;
     private const float TopButtonSpacing = 12f;
     private const float TopButtonMinWidth = 220f;
@@ -77,7 +73,6 @@ internal static class ModMenuController
     private const float SliderDirectionalStep = 0.01f;
     private const float MouseMoveThresholdSquared = 36f;
     private const float ScrollIntoViewPadding = 8f;
-    private const float NavigationTraceThrottleSeconds = 1f;
 
     private static readonly Color Gray = new(0.34f, 0.36f, 0.40f, 1f);
     private static readonly Color LightGray = new(0.57f, 0.60f, 0.66f, 1f);
@@ -147,7 +142,6 @@ internal static class ModMenuController
     private static Vector2 _lastMousePosition;
     private static bool _mouseInputMode;
     private static float _nextDirectionalInputTime;
-    private static float _nextNavigationTraceTime;
     private static ModMenuSelectable _lastTabTarget;
     private static ModMenuSelectable _lastOptionTarget;
     private static ModMenuSelectable _lastBottomTarget;
@@ -1341,7 +1335,7 @@ internal static class ModMenuController
     private static ModMenuSelectable FindDirectionalFromOptionsPanel(
         ModMenuSelectable currentTarget, Vector2 normalizedDirection)
     {
-        if (normalizedDirection.x > 0.5f && !IsSliderNavigationTarget(currentTarget))
+        if (normalizedDirection.x < -0.5f && !IsSliderNavigationTarget(currentTarget))
         {
             return ResolveTabTargetForCrossPanel();
         }
@@ -2199,58 +2193,17 @@ internal static class ModMenuController
     {
         if (_mouseInputMode || target == null || target.AnchorRect == null || _customNavigatorsRoot == null)
         {
-            TraceNavigation("UpdateNavigator:skip-invalid", GetCurrentSelectedObject(), target,
-                $"mouseMode={_mouseInputMode} customRoot={_customNavigatorsRoot != null}");
             _navigatorVisuals?.SetVisible(false);
             return;
         }
 
         if (!_customNavigatorsRoot.activeInHierarchy)
         {
-            TraceNavigation("UpdateNavigator:skip-root-inactive", GetCurrentSelectedObject(), target,
-                $"targetCount={NavigationTargets.Count}");
             _navigatorVisuals?.SetVisible(false);
             return;
         }
 
-        TraceNavigation("UpdateNavigator:apply", GetCurrentSelectedObject(), target, $"targetCount={NavigationTargets.Count}");
         _navigatorVisuals?.UpdateForTarget(target.AnchorRect);
-    }
-
-    private static void TraceNavigation(string eventName, GameObject selectedObject, ModMenuSelectable target,
-        string detail)
-    {
-#if DEBUG
-        if (Time.unscaledTime < _nextNavigationTraceTime)
-        {
-            return;
-        }
-
-        var selectedPath = BuildObjectPath(selectedObject != null ? selectedObject.transform : null);
-        var targetSelectionPath = BuildObjectPath(target != null && target.SelectionObject != null ? target.SelectionObject.transform : null);
-        var targetAnchorPath = BuildObjectPath(target != null && target.AnchorRect != null ? target.AnchorRect.transform : null);
-        var message = $"[SurvivorModMenu][NavTrace] {eventName} | selected={selectedPath} | target={targetSelectionPath} | anchor={targetAnchorPath} | {detail}";
-        _nextNavigationTraceTime = Time.unscaledTime + NavigationTraceThrottleSeconds;
-        MelonLogger.Msg(message);
-#endif
-    }
-
-    private static string BuildObjectPath(Transform transform)
-    {
-        if (transform == null)
-        {
-            return "<null>";
-        }
-
-        var names = new List<string>(8);
-        while (transform != null)
-        {
-            names.Add(transform.name);
-            transform = transform.parent;
-        }
-
-        names.Reverse();
-        return string.Join("/", names);
     }
 
     private static void BuildMenu(Canvas canvas)
@@ -2841,7 +2794,7 @@ internal static class ModMenuController
         rect.anchorMin = new Vector2(0.5f, 1f);
         rect.anchorMax = new Vector2(0.5f, 1f);
         rect.pivot = new Vector2(0.5f, 1f);
-        rect.anchoredPosition = new Vector2(0f, -28f);
+        rect.anchoredPosition = new Vector2(10f, -28f);
         rect.sizeDelta = new Vector2(availableWidth, 60f);
     }
 

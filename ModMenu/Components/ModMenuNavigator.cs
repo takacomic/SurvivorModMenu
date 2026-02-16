@@ -1,15 +1,10 @@
-using System;
 using Il2CppVampireSurvivors.UI;
-using MelonLoader;
-using UnityEngine;
-using UnityEngine.UI;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.ModMenu.Components;
 
 [RegisterTypeInIl2Cpp]
 public sealed class ModMenuNavigator : MonoBehaviour
 {
-    private const float VisualTraceIntervalSeconds = 1f;
     private static readonly Vector3[] CornerBuffer = new Vector3[4];
 
     public ModMenuNavigator(IntPtr ptr) : base(ptr)
@@ -26,7 +21,6 @@ public sealed class ModMenuNavigator : MonoBehaviour
     private float _objectGap = 6f;
 
     private bool _visible;
-    private float _nextVisualTraceTime;
 
     internal void Configure(RectTransform panelRect, UISpriteAnimation leftAnimation, UISpriteAnimation rightAnimation,
         float arrowSize, float objectGap)
@@ -54,7 +48,6 @@ public sealed class ModMenuNavigator : MonoBehaviour
         _rightRect.SetAsLastSibling();
         PositionIndicators(targetRect);
         SetVisible(true);
-        TraceVisualState(targetRect, "apply");
     }
 
     internal void SetVisible(bool visible)
@@ -119,36 +112,6 @@ public sealed class ModMenuNavigator : MonoBehaviour
         rect.anchoredPosition = new Vector2(x, y);
         rect.localScale = scale;
         rect.localRotation = Quaternion.identity;
-    }
-
-    private void TraceVisualState(RectTransform targetRect, string reason)
-    {
-#if DEBUG
-        if (Time.unscaledTime < _nextVisualTraceTime)
-        {
-            return;
-        }
-
-        _nextVisualTraceTime = Time.unscaledTime + VisualTraceIntervalSeconds;
-        if (_containerRect == null || targetRect == null || _leftRect == null || _rightRect == null)
-        {
-            MelonLogger.Msg($"[SurvivorModMenu][NavVisual] {reason} missing refs");
-            return;
-        }
-
-        if (!TryGetTargetBoundsInContainer(targetRect, out var center, out var minX, out var maxX, out var minY,
-                out var maxY))
-        {
-            MelonLogger.Msg($"[SurvivorModMenu][NavVisual] {reason} failed bounds for target={targetRect.name}");
-            return;
-        }
-
-        var leftPos = _leftRect.anchoredPosition;
-        var rightPos = _rightRect.anchoredPosition;
-        var size = _containerRect.rect.size;
-        MelonLogger.Msg(
-            $"[SurvivorModMenu][NavVisual] {reason} target={targetRect.name} center=({center.x:F1},{center.y:F1}) bounds=({minX:F1},{maxX:F1},{minY:F1},{maxY:F1}) left=({leftPos.x:F1},{leftPos.y:F1}) right=({rightPos.x:F1},{rightPos.y:F1}) container=({size.x:F1},{size.y:F1}) visible={_visible}");
-#endif
     }
 
     private bool TryGetTargetBoundsInContainer(RectTransform targetRect, out Vector2 center, out float minX, out float maxX,

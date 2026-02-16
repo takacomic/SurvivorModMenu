@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Generic;
-using MelonLoader;
-using UnityEngine;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.ModMenu.Components;
 
 [RegisterTypeInIl2Cpp]
 public sealed class ModMenuMainOptionObject : MonoBehaviour

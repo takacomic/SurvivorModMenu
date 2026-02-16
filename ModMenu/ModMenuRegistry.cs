@@ -1,8 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Linq;
 
-namespace SurvivorModMenu;
+namespace SurvivorModMenu.ModMenu;
 
 /// <summary>
 /// Registry used by mods to expose settings pages and sections inside SurvivorModMenu.

@@ -1,7 +1,10 @@
 using Il2CppInterop.Runtime;
-using MelonLoader;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
+using SurvivorModMenu.ModMenu;
+#if DEBUG
+using SurvivorModMenu.Debugging;
+#endif
 
 [assembly: MelonInfo(typeof(SurvivorModMenu.SurvivorModMenuPlugin), SurvivorModMenu.BuildInfo.Name, SurvivorModMenu.BuildInfo.Version, SurvivorModMenu.BuildInfo.Author, SurvivorModMenu.BuildInfo.Download)]
 [assembly: MelonGame("poncle", "Vampire Survivors")]
