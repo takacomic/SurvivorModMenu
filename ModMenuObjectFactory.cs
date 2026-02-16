@@ -92,6 +92,11 @@ internal static class ModMenuObjectFactory
         return GetOrAddComponent<VerticalLayoutGroup>(obj);
     }
 
+    internal static HorizontalLayoutGroup GetOrAddHorizontalLayoutGroup(GameObject obj)
+    {
+        return GetOrAddComponent<HorizontalLayoutGroup>(obj);
+    }
+
     internal static ContentSizeFitter GetOrAddContentSizeFitter(GameObject obj)
     {
         return GetOrAddComponent<ContentSizeFitter>(obj);

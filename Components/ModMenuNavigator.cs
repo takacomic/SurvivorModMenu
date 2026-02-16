@@ -7,12 +7,12 @@ using UnityEngine.UI;
 namespace SurvivorModMenu;
 
 [RegisterTypeInIl2Cpp]
-public sealed class ModMenuNavigatorVisuals : MonoBehaviour
+public sealed class ModMenuNavigator : MonoBehaviour
 {
     private const float VisualTraceIntervalSeconds = 1f;
     private static readonly Vector3[] CornerBuffer = new Vector3[4];
 
-    public ModMenuNavigatorVisuals(IntPtr ptr) : base(ptr)
+    public ModMenuNavigator(IntPtr ptr) : base(ptr)
     {
     }
 

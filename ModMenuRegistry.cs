@@ -152,6 +152,22 @@ public static class ModMenuRegistry
         return Entries;
     }
 
+    internal static Dictionary<string, List<Action<ModMenuBuilder>>> GetModOptionsById()
+    {
+        var modOptions = new Dictionary<string, List<Action<ModMenuBuilder>>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in Entries)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.Id))
+            {
+                continue;
+            }
+
+            modOptions[entry.Id] = entry.GetSectionBuildActions();
+        }
+
+        return modOptions;
+    }
+
     internal static ModMenuEntry FindEntry(string id)
     {
         if (!TryNormalizeKey(id, out var normalizedId))
@@ -222,6 +238,22 @@ internal sealed class ModMenuEntry
 
         _sections.RemoveAt(index);
         return true;
+    }
+
+    internal List<Action<ModMenuBuilder>> GetSectionBuildActions()
+    {
+        var sectionBuilds = new List<Action<ModMenuBuilder>>(_sections.Count);
+        foreach (var section in _sections)
+        {
+            if (section.Build == null)
+            {
+                continue;
+            }
+
+            sectionBuilds.Add(section.Build);
+        }
+
+        return sectionBuilds;
     }
 
     private int FindSectionIndex(string sectionId)

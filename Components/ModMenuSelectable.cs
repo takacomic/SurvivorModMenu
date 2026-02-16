@@ -6,22 +6,22 @@ using UnityEngine.UI;
 namespace SurvivorModMenu;
 
 [RegisterTypeInIl2Cpp]
-public sealed class ModMenuSelectableNavigationTarget : MonoBehaviour
+public sealed class ModMenuSelectable : MonoBehaviour
 {
-    public ModMenuSelectableNavigationTarget(IntPtr ptr) : base(ptr)
+    public ModMenuSelectable(IntPtr ptr) : base(ptr)
     {
     }
 
     private RectTransform _anchorRect;
-    private ModMenuNavigationPanel _ownerPanel;
+    private ModMenuPanel _ownerPanel;
     private bool _isOptionObject;
 
     internal RectTransform AnchorRect => _anchorRect;
-    internal ModMenuNavigationPanel OwnerPanel => _ownerPanel;
+    internal ModMenuPanel OwnerPanel => _ownerPanel;
     internal bool IsOptionObject => _isOptionObject;
     internal GameObject SelectionObject => gameObject;
 
-    internal void Configure(RectTransform anchorRect, ModMenuNavigationPanel ownerPanel, bool isOptionObject)
+    internal void Configure(RectTransform anchorRect, ModMenuPanel ownerPanel, bool isOptionObject)
     {
         _anchorRect = anchorRect;
         _ownerPanel = ownerPanel;
