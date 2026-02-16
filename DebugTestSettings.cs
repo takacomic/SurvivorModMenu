@@ -1,5 +1,4 @@
 #if DEBUG
-using System;
 using MelonLoader;
 
 namespace SurvivorModMenu;
@@ -12,7 +11,15 @@ internal static class DebugTestSettings
         "Alpha",
         "Beta",
         "Gamma",
-        "Delta"
+        "Delta",
+        "Epsilon",
+        "Zeta",
+        "Eta",
+        "Theta",
+        "Iota",
+        "Kappa",
+        "Lambda",
+        "Mu"
     };
 
     private static bool _registered;

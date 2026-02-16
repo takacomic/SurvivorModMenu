@@ -1,29 +1,132 @@
+using System;
 using System.Collections.Generic;
 using Il2CppTMPro;
 using UnityEngine.UI;
 
 namespace SurvivorModMenu;
 
+/// <summary>
+/// Provides a restricted builder surface for supplement sections registered by mods.
+/// </summary>
 public interface IModMenuSectionBuilder
 {
-    void AddLabel(string text, float fontSizeDelta = 0f);
-    void AddToggle(string label, Func<bool> getValue, Action<bool> setValue);
-    TMP_InputField AddStringField(string label, Func<string> getValue, Action<string> setValue,
+    /// <summary>
+    /// Adds a non-interactive text label row.
+    /// </summary>
+    /// <param name="text">Label content to render.</param>
+    /// <param name="fontSizeDelta">Optional delta applied to the default label font size.</param>
+    public void AddLabel(string text, float fontSizeDelta = 0f);
+
+    /// <summary>
+    /// Adds a boolean toggle row.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user changes the value.</param>
+    public void AddToggle(string label, Func<bool> getValue, Action<bool> setValue);
+
+    /// <summary>
+    /// Adds a string input field row.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user submits a new value.</param>
+    /// <param name="characterLimit">Maximum input length. Set to 0 for no limit.</param>
+    /// <returns>The created input field instance.</returns>
+    public TMP_InputField AddStringField(string label, Func<string> getValue, Action<string> setValue,
         int characterLimit = 0);
-    TMP_InputField AddIntField(string label, Func<int> getValue, Action<int> setValue,
+
+    /// <summary>
+    /// Adds an integer input field row with clamping.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user submits a new value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <returns>The created input field instance.</returns>
+    public TMP_InputField AddIntField(string label, Func<int> getValue, Action<int> setValue,
         int min = int.MinValue, int max = int.MaxValue);
-    TMP_InputField AddFloatField(string label, Func<float> getValue, Action<float> setValue,
+
+    /// <summary>
+    /// Adds a float input field row with clamping.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user submits a new value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <param name="format">Numeric format used when displaying values.</param>
+    /// <returns>The created input field instance.</returns>
+    public TMP_InputField AddFloatField(string label, Func<float> getValue, Action<float> setValue,
         float min = float.MinValue, float max = float.MaxValue, string format = "0.##");
-    TMP_InputField AddDoubleField(string label, Func<double> getValue, Action<double> setValue,
+
+    /// <summary>
+    /// Adds a double input field row with clamping.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user submits a new value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <param name="format">Numeric format used when displaying values.</param>
+    /// <returns>The created input field instance.</returns>
+    public TMP_InputField AddDoubleField(string label, Func<double> getValue, Action<double> setValue,
         double min = double.MinValue, double max = double.MaxValue, string format = "0.##");
-    Slider AddIntSlider(string label, Func<int> getValue, Action<int> setValue, int min, int max);
-    Slider AddFloatSlider(string label, Func<float> getValue, Action<float> setValue,
+
+    /// <summary>
+    /// Adds an integer slider row with manual numeric input support.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user changes the value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <returns>The created slider instance.</returns>
+    public Slider AddIntSlider(string label, Func<int> getValue, Action<int> setValue, int min, int max);
+
+    /// <summary>
+    /// Adds a float slider row with manual numeric input support.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user changes the value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <param name="format">Numeric format used when displaying values.</param>
+    /// <returns>The created slider instance.</returns>
+    public Slider AddFloatSlider(string label, Func<float> getValue, Action<float> setValue,
         float min, float max, string format = "0.##");
-    Slider AddDoubleSlider(string label, Func<double> getValue, Action<double> setValue,
+
+    /// <summary>
+    /// Adds a double slider row with manual numeric input support.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user changes the value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <param name="format">Numeric format used when displaying values.</param>
+    /// <returns>The created slider instance.</returns>
+    public Slider AddDoubleSlider(string label, Func<double> getValue, Action<double> setValue,
         double min, double max, string format = "0.##");
-    Button AddDropdown(string label, IReadOnlyList<string> options, Func<int> getSelectedIndex,
+
+    /// <summary>
+    /// Adds a dropdown selection row.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="options">Selectable options in display order.</param>
+    /// <param name="getSelectedIndex">Callback used to read the current selected index.</param>
+    /// <param name="setSelectedIndex">Callback invoked when the user selects a new option.</param>
+    /// <returns>The created dropdown trigger button.</returns>
+    public Button AddDropdown(string label, IReadOnlyList<string> options, Func<int> getSelectedIndex,
         Action<int> setSelectedIndex);
-    void AddSpacer(float height);
+
+    /// <summary>
+    /// Adds vertical spacing between rows.
+    /// </summary>
+    /// <param name="height">Requested spacer height in UI units.</param>
+    public void AddSpacer(float height);
 }
 
 internal sealed class ModMenuSectionBuilderAdapter : IModMenuSectionBuilder

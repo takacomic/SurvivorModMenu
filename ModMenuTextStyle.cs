@@ -3,11 +3,23 @@ using UnityEngine;
 
 namespace SurvivorModMenu;
 
+/// <summary>
+/// Captures a text template copied from the game's existing UI.
+/// </summary>
 internal struct ModMenuTextStyle
 {
-    internal bool IsTmp;
-    internal TMP_FontAsset TmpFont;
-    internal Font UiFont;
-    internal float FontSize;
-    internal Color Color;
+    /// <summary>True when TextMeshPro should be used instead of legacy UI Text.</summary>
+    internal bool isTmp;
+
+    /// <summary>Template TMP font for menu text.</summary>
+    internal TMP_FontAsset tmpFont;
+
+    /// <summary>Template legacy UI font used when TMP is unavailable.</summary>
+    internal Font uiFont;
+
+    /// <summary>Base font size used by generated labels/buttons.</summary>
+    internal float fontSize;
+
+    /// <summary>Template text color used by generated labels/buttons.</summary>
+    internal Color color;
 }

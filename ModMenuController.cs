@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using Il2CppInterop.Runtime;
 using Il2CppTMPro;
+using Il2CppVampireSurvivors.Graphics;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
@@ -15,10 +18,31 @@ internal static class ModMenuController
     private const string MenuRootName = "SurvivorModMenu_ModMenu";
     private const string TopBackButtonName = "SurvivorModMenu_TopBackButton";
     private const string TopResetButtonName = "SurvivorModMenu_TopResetButton";
+    private const string OptionsButtonComponentName = "OptionsButton";
+    private const string OptionsButtonComponentFullName = "Il2CppVampireSurvivors.UI.OptionsButton";
+    private const string SelectableUiComponentFullName = "Il2CppVampireSurvivors.UI.SelectableUI";
+    private const string ModsButtonSpriteName = "button_c9_mouseover";
+    private const string BackButtonSpriteName = "button_c8_normal";
+    private const string ResetButtonSpriteName = "button_c5_mouseover";
+    private const float ButtonSpritePixelsPerUnit = 0.3f;
     private const float ScanIntervalSeconds = 0.2f;
+    private const float PanelEdgeInset = 10f;
     private const float ContentSidePadding = 60f;
     private const float ContentTopPadding = 140f;
     private const float ContentBottomPadding = 110f;
+    private const float ContentLeftGapFromSeparator = 30f;
+    private const float TabPanelSidePadding = 0f;
+    private const float TabPanelInnerPadding = 8f;
+    private const float TabPanelButtonVerticalGap = 20f;
+    private const float TabPanelGap = 0f;
+    private const float TabPanelWidthPercent = 0.2f;
+    private const float TabPanelMinWidth = 92f;
+    private const float TabPanelMaxWidth = 160f;
+    private const float TabButtonWidthReduction = 40f;
+    private const float TabButtonMinFontSize = 10f;
+    private const int TabButtonMaxVisibleLines = 2;
+    private const float ScrollbarWidth = 14f;
+    private const float ScrollbarEdgePadding = 4f;
 
     private static readonly Color Gray = new(0.34f, 0.36f, 0.40f, 1f);
     private static readonly Color LightGray = new(0.57f, 0.60f, 0.66f, 1f);
@@ -26,34 +50,41 @@ internal static class ModMenuController
     private static readonly Color Green = new(0.24f, 0.68f, 0.38f, 1f);
     private static readonly Color Red = new(0.74f, 0.24f, 0.25f, 1f);
     private static readonly Color Dark = new(0.16f, 0.18f, 0.22f, 1f);
+    private static readonly Color TrackbarDarkGray = new(0.23f, 0.23f, 0.23f, 0.9f);
 
     private static Sprite _roundedSprite;
+    private static Sprite _framePanelSprite;
+    private static readonly Dictionary<string, Sprite> UiSpriteCache = new(StringComparer.Ordinal);
 
     private static Button _modButton;
     private static Button _optionsAnchorButton;
     private static GameObject _menuRoot;
     private static CanvasGroup _menuGroup;
     private static GameObject _panelRoot;
+    private static GameObject _tabPanelRoot;
+    private static GameObject _listViewRoot;
     private static GameObject _listRoot;
+    private static ScrollRect _listScrollRect;
+    private static Scrollbar _listScrollbar;
     private static GameObject _contentRoot;
+    private static RectTransform _contentViewport;
+    private static ScrollRect _contentScrollRect;
+    private static Scrollbar _contentScrollbar;
     private static Button _topBackButton;
     private static Button _topResetButton;
     private static GameObject _titleObject;
     private static GameObject _subtitleObject;
     private static float _nextScanTime;
     private static ModMenuTextStyle _textStyle;
-    private static MenuView _menuView;
     private static int _registryVersion = -1;
     private static readonly Dictionary<string, ModPage> Pages = new();
+    private static readonly Dictionary<string, Button> EntryButtons = new();
     private static readonly Dictionary<int, float> LabelBaseY = new();
     private static bool _optionsWasActive;
     private static bool _modWasActive;
-
-    private enum MenuView
-    {
-        List,
-        Detail
-    }
+    private static string _selectedEntryId;
+    private static Component _selectableUiPrototype;
+    private static Type _selectableUiType;
 
     private sealed class ModPage
     {
@@ -88,27 +119,11 @@ internal static class ModMenuController
 
     private static bool IsReady()
     {
-        if (_modButton == null)
-        {
-            return false;
-        }
-
-        if (_menuRoot == null)
-        {
-            return false;
-        }
-
-        if (_panelRoot == null)
-        {
-            return false;
-        }
-
-        if (_topBackButton == null)
-        {
-            return false;
-        }
-
-        return _topResetButton != null;
+        return _modButton != null &&
+               _menuRoot != null &&
+               _panelRoot != null &&
+               _topBackButton != null &&
+               _topResetButton != null;
     }
 
     private static void TrySetup()
@@ -117,6 +132,7 @@ internal static class ModMenuController
         if (existingButton != null)
         {
             _modButton = existingButton.GetComponent<Button>();
+            RemoveOptionsButtonComponent(_modButton?.gameObject);
         }
 
         if (_menuRoot == null)
@@ -168,18 +184,26 @@ internal static class ModMenuController
 
     private static Button CreateMainMenuButton(Button optionsButton)
     {
+        if (optionsButton == null)
+        {
+            return null;
+        }
+
         var parent = optionsButton.transform.parent;
         if (parent == null)
         {
             return null;
         }
 
-        var modButton = CreateButton(parent, ModButtonName, "MODS", Blue, LightGray, Green, Dark);
+        var modButton = CloneButtonFromTemplate(optionsButton, parent, ModButtonName) ?? CreateButton(parent, ModButtonName, "MODS", Blue, LightGray, Green, Dark);
         if (modButton == null)
         {
             return null;
         }
 
+        RemoveOptionsButtonComponent(modButton.gameObject);
+        SetButtonLabel(modButton, "MODS");
+        ApplyButtonSprite(modButton, ModsButtonSpriteName);
         var optionsRect = optionsButton.GetComponent<RectTransform>();
         var modRect = modButton.GetComponent<RectTransform>();
         CopyRectTransform(optionsRect, modRect);
@@ -218,6 +242,7 @@ internal static class ModMenuController
 
         SetMenuVisible(false);
         SetTopButtonsVisible(false, false);
+        SetScrollbarsVisible(false, false);
         ApplyMenuButtonVisibility(true);
     }
 
@@ -230,24 +255,17 @@ internal static class ModMenuController
 
     private static void BuildMenu(Canvas canvas)
     {
-        _menuRoot = new GameObject(MenuRootName);
-        _menuRoot.AddComponent<RectTransform>();
-        _menuRoot.AddComponent<CanvasGroup>();
-        _menuRoot.transform.SetParent(canvas.transform, false);
-
-        var rootRect = _menuRoot.GetComponent<RectTransform>();
+        var rootRect = ModMenuObjectFactory.CreateRect(MenuRootName, canvas.transform);
+        _menuRoot = rootRect.gameObject;
+        _menuGroup = ModMenuObjectFactory.GetOrAddCanvasGroup(_menuRoot);
         rootRect.anchorMin = Vector2.zero;
         rootRect.anchorMax = Vector2.one;
         rootRect.offsetMin = Vector2.zero;
         rootRect.offsetMax = Vector2.zero;
 
-        _menuGroup = _menuRoot.GetComponent<CanvasGroup>();
         SetMenuVisible(false);
 
-        var backdrop = new GameObject("Backdrop");
-        var backdropRect = backdrop.AddComponent<RectTransform>();
-        var backdropImage = backdrop.AddComponent<Image>();
-        backdrop.transform.SetParent(_menuRoot.transform, false);
+        var backdropImage = ModMenuObjectFactory.CreateImage("Backdrop", _menuRoot.transform, out var backdropRect);
         backdropRect.anchorMin = Vector2.zero;
         backdropRect.anchorMax = Vector2.one;
         backdropRect.offsetMin = Vector2.zero;
@@ -255,10 +273,8 @@ internal static class ModMenuController
         backdropImage.color = new Color(0f, 0f, 0f, 0.55f);
         backdropImage.raycastTarget = true;
 
-        var panel = new GameObject("Panel");
-        var panelRect = panel.AddComponent<RectTransform>();
-        var panelImage = panel.AddComponent<Image>();
-        panel.transform.SetParent(_menuRoot.transform, false);
+        var panelImage = ModMenuObjectFactory.CreateImage("Panel", _menuRoot.transform, out var panelRect);
+        var panel = panelRect.gameObject;
         panelRect.anchorMin = new Vector2(0.5f, 0.5f);
         panelRect.anchorMax = new Vector2(0.5f, 0.5f);
         panelRect.pivot = new Vector2(0.5f, 0.5f);
@@ -267,49 +283,66 @@ internal static class ModMenuController
         var canvasSize = canvasRect != null ? canvasRect.rect.size : new Vector2(1280f, 720f);
         var panelWidth = Mathf.Max(680f, Mathf.Min(980f, canvasSize.x * 0.78f));
         var panelHeight = Mathf.Max(460f, Mathf.Min(720f, canvasSize.y * 0.78f));
+        panelHeight *= 1.5f;
+        panelHeight = Mathf.Min(panelHeight, canvasSize.y * 0.95f);
+        var topTrim = ResolveTopTrimAmount();
+        panelHeight = Mathf.Max(360f, panelHeight);
+        panelWidth = Mathf.Max(640f, panelWidth - (PanelEdgeInset * 8f));
         panelRect.sizeDelta = new Vector2(panelWidth, panelHeight);
+        panelRect.anchoredPosition = new Vector2(0f, -topTrim);
 
         ApplyPanelStyle(panelImage);
         _panelRoot = panel;
+        var tabPanelWidth = ResolveTabPanelWidth(panelWidth);
 
-        var title = CreateTextObject(panel.transform, "MOD OPTIONS", _textStyle, _textStyle.FontSize + 10f,
+        var title = CreateTextObject(panel.transform, "MOD OPTIONS", _textStyle, _textStyle.fontSize + 10f,
             TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
         title.name = "MenuTitle";
         _titleObject = title;
         var titleRect = title.GetComponent<RectTransform>();
-        titleRect.anchorMin = new Vector2(0.5f, 1f);
-        titleRect.anchorMax = new Vector2(0.5f, 1f);
-        titleRect.pivot = new Vector2(0.5f, 1f);
-        titleRect.anchoredPosition = new Vector2(0f, -28f);
-        titleRect.sizeDelta = new Vector2(panelWidth - 120f, 60f);
+        var detailLeftOffset = ResolveDetailLeftOffset(tabPanelWidth);
+        ConfigureHeaderRect(titleRect, panelWidth, detailLeftOffset, -28f, 60f);
 
-        var subtitle = CreateTextObject(panel.transform, "SELECT A MOD", _textStyle, _textStyle.FontSize + 2f,
+        var subtitle = CreateTextObject(panel.transform, "SELECT A MOD", _textStyle, _textStyle.fontSize + 2f,
             TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
         subtitle.name = "MenuSubtitle";
         _subtitleObject = subtitle;
         var subtitleRect = subtitle.GetComponent<RectTransform>();
-        subtitleRect.anchorMin = new Vector2(0.5f, 1f);
-        subtitleRect.anchorMax = new Vector2(0.5f, 1f);
-        subtitleRect.pivot = new Vector2(0.5f, 1f);
-        subtitleRect.anchoredPosition = new Vector2(0f, -72f);
-        subtitleRect.sizeDelta = new Vector2(panelWidth - 120f, 40f);
+        ConfigureHeaderRect(subtitleRect, panelWidth, detailLeftOffset, -72f, 40f);
 
-        _listRoot = new GameObject("ModList");
-        var listRect = _listRoot.AddComponent<RectTransform>();
-        _listRoot.transform.SetParent(panel.transform, false);
-        ConfigureContentRect(listRect);
-        ConfigureListLayout(listRect);
+        var tabPanelImage = ModMenuObjectFactory.CreateImage("TabPanel", panel.transform, out var tabPanelRect);
+        var tabPanel = tabPanelRect.gameObject;
+        ConfigureTabPanelRect(tabPanelRect, tabPanelWidth);
+        ApplyPanelStyle(tabPanelImage);
+        _tabPanelRoot = tabPanel;
 
-        _contentRoot = new GameObject("ModContent");
-        var contentRect = _contentRoot.AddComponent<RectTransform>();
-        _contentRoot.transform.SetParent(panel.transform, false);
-        ConfigureContentRect(contentRect);
-        _contentRoot.SetActive(false);
+        _listViewRoot = CreateScrollArea(tabPanel.transform, "ModList", out var listContentRect, out _, out _listScrollRect);
+        var listRect = _listViewRoot.GetComponent<RectTransform>();
+        ConfigureTabListRect(listRect);
+        _listRoot = listContentRect.gameObject;
+        ConfigureListLayout(listContentRect);
+
+        _contentRoot = CreateContentScrollArea(panel.transform, "ModContent", out _contentViewport,
+            out _contentScrollRect);
+        var contentRect = _contentRoot.GetComponent<RectTransform>();
+        ConfigureDetailContentRect(contentRect, tabPanelWidth);
+        _contentRoot.SetActive(true);
+
+        var panelRectForScrollbars = panel.GetComponent<RectTransform>();
+        _listScrollbar = null;
+        _contentScrollbar = CreateVerticalScrollbar(panelRectForScrollbars, "ContentScrollbar");
+        if (_contentScrollRect != null)
+        {
+            _contentScrollRect.verticalScrollbar = _contentScrollbar;
+            _contentScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+        }
+
+        SetScrollbarsVisible(false, false);
     }
 
     private static void ShowModList()
     {
-        if (_listRoot == null || _contentRoot == null)
+        if (_listViewRoot == null || _contentRoot == null)
         {
             return;
         }
@@ -317,13 +350,13 @@ internal static class ModMenuController
         EnsureTopButtons();
         SyncTopButtonPositions();
         SetTopButtonsVisible(true, true);
+        SetScrollbarsVisible(false, true);
 
-        _menuView = MenuView.List;
         SetText(_titleObject, "MOD OPTIONS");
-        SetText(_subtitleObject, "SELECT A MOD");
-        _listRoot.SetActive(true);
-        _contentRoot.SetActive(false);
+        _listViewRoot.SetActive(true);
+        _contentRoot.SetActive(true);
         EnsureModListCurrent();
+        OpenDefaultEntry();
     }
 
     private static void OpenModEntry(string entryId)
@@ -345,26 +378,17 @@ internal static class ModMenuController
             return;
         }
 
-        EnsureTopButtons();
-        SyncTopButtonPositions();
-        SetTopButtonsVisible(true, false);
-
-        _menuView = MenuView.Detail;
-        SetText(_titleObject, entry.DisplayName);
-        SetText(_subtitleObject, "SETTINGS");
-        _listRoot.SetActive(false);
+        _selectedEntryId = entry.Id;
+        UpdateEntryButtonStyles();
+        SetText(_subtitleObject, entry.DisplayName);
+        _listViewRoot.SetActive(true);
         _contentRoot.SetActive(true);
+        SetScrollbarsVisible(false, true);
         ActivatePage(page);
     }
 
     private static void OnBackPressed()
     {
-        if (_menuView == MenuView.Detail)
-        {
-            ShowModList();
-            return;
-        }
-
         CloseMenu();
     }
 
@@ -392,11 +416,15 @@ internal static class ModMenuController
         }
 
         ClearChildren(_listRoot.transform);
+        EntryButtons.Clear();
 
         var entries = ModMenuRegistry.GetEntries();
         if (entries == null || entries.Count == 0)
         {
             CreateEmptyListLabel();
+            _selectedEntryId = null;
+            _contentRoot?.SetActive(false);
+            SetText(_subtitleObject, "NO MODS REGISTERED");
             return;
         }
 
@@ -413,12 +441,7 @@ internal static class ModMenuController
                 continue;
             }
 
-            var layout = button.gameObject.GetComponent<LayoutElement>();
-            if (layout == null)
-            {
-                layout = button.gameObject.AddComponent<LayoutElement>();
-            }
-
+            var layout = ModMenuObjectFactory.GetOrAddLayoutElement(button.gameObject);
             layout.ignoreLayout = false;
             layout.preferredHeight = 56f;
             layout.minHeight = 56f;
@@ -432,9 +455,28 @@ internal static class ModMenuController
                 buttonRect.localScale = Vector3.one;
             }
 
+            ConfigureTabPanelButtonText(button);
+
             var entryId = entry.Id;
+            EntryButtons[entryId] = button;
             AddClickListener(button, () => OpenModEntry(entryId));
         }
+
+        var hasSelectedEntry = false;
+        if (!string.IsNullOrWhiteSpace(_selectedEntryId))
+        {
+            if (sorted.Any(t => t.Id.Equals(_selectedEntryId, StringComparison.OrdinalIgnoreCase)))
+            {
+                hasSelectedEntry = true;
+            }
+        }
+
+        if (!hasSelectedEntry)
+        {
+            _selectedEntryId = sorted[0].Id;
+        }
+
+        UpdateEntryButtonStyles();
 
         var listRect = _listRoot.GetComponent<RectTransform>();
         if (listRect == null)
@@ -443,6 +485,37 @@ internal static class ModMenuController
         }
 
         LayoutRebuilder.ForceRebuildLayoutImmediate(listRect);
+        OpenDefaultEntry();
+    }
+
+    private static void OpenDefaultEntry()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedEntryId))
+        {
+            SetText(_subtitleObject, "NO MODS REGISTERED");
+            return;
+        }
+
+        OpenModEntry(_selectedEntryId);
+    }
+
+    private static void UpdateEntryButtonStyles()
+    {
+        foreach (var kvp in EntryButtons)
+        {
+            var entryId = kvp.Key;
+            var button = kvp.Value;
+            if (button == null)
+            {
+                continue;
+            }
+
+            var selected = !string.IsNullOrWhiteSpace(_selectedEntryId) &&
+                           entryId.Equals(_selectedEntryId, StringComparison.OrdinalIgnoreCase);
+            var normal = selected ? Blue : Gray;
+            var pressed = selected ? Green : Blue;
+            ApplyButtonStyle(button, normal, LightGray, pressed, Dark);
+        }
     }
 
     private static int CompareEntries(ModMenuEntry left, ModMenuEntry right)
@@ -471,15 +544,14 @@ internal static class ModMenuController
 
     private static void CreateEmptyListLabel()
     {
-        var row = new GameObject("EmptyLabel");
-        var rowRect = row.AddComponent<RectTransform>();
-        row.transform.SetParent(_listRoot.transform, false);
+        var rowRect = ModMenuObjectFactory.CreateRect("EmptyLabel", _listRoot.transform);
+        var row = rowRect.gameObject;
 
-        var layout = row.AddComponent<LayoutElement>();
+        var layout = ModMenuObjectFactory.GetOrAddLayoutElement(row);
         layout.preferredHeight = 56f;
         layout.minHeight = 56f;
 
-        var label = CreateTextObject(row.transform, "No mods registered.", _textStyle, _textStyle.FontSize + 2f,
+        var label = CreateTextObject(row.transform, "No mods registered.", _textStyle, _textStyle.fontSize + 2f,
             TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
         StretchToParent(label.GetComponent<RectTransform>());
 
@@ -490,7 +562,7 @@ internal static class ModMenuController
 
     private static ModPage EnsurePage(ModMenuEntry entry)
     {
-        if (entry == null || _contentRoot == null)
+        if (entry == null || _contentViewport == null)
         {
             return null;
         }
@@ -516,12 +588,15 @@ internal static class ModMenuController
             Pages.Remove(entry.Id);
         }
 
-        var pageRoot = new GameObject($"Page_{entry.Id}");
-        var pageRect = pageRoot.AddComponent<RectTransform>();
-        pageRoot.transform.SetParent(_contentRoot.transform, false);
-        StretchToParent(pageRect);
+        var pageRect = ModMenuObjectFactory.CreateRect($"Page_{entry.Id}", _contentViewport);
+        var pageRoot = pageRect.gameObject;
+        pageRect.anchorMin = new Vector2(0f, 1f);
+        pageRect.anchorMax = new Vector2(1f, 1f);
+        pageRect.pivot = new Vector2(0.5f, 1f);
+        pageRect.anchoredPosition = Vector2.zero;
+        pageRect.sizeDelta = Vector2.zero;
 
-        var builder = new ModMenuBuilder(pageRect, null, _textStyle, AddClickListener);
+        var builder = new ModMenuBuilder(pageRect, _textStyle, AddClickListener);
         var page = new ModPage(entry, pageRoot, builder);
         Pages[entry.Id] = page;
 
@@ -543,9 +618,46 @@ internal static class ModMenuController
 
             entryPage.Root.SetActive(entryPage == page);
         }
+
+        if (_contentScrollRect == null || page == null || page.Root == null)
+        {
+            return;
+        }
+
+        var pageRect = page.Root.GetComponent<RectTransform>();
+        if (pageRect == null)
+        {
+            return;
+        }
+
+        _contentScrollRect.content = pageRect;
+        LayoutRebuilder.ForceRebuildLayoutImmediate(pageRect);
+        Canvas.ForceUpdateCanvases();
+        _contentScrollRect.verticalNormalizedPosition = 1f;
+        SetScrollbarsVisible(false, true);
     }
 
-    private static void ConfigureContentRect(RectTransform rect)
+    private static float ResolveTabPanelWidth(float panelWidth)
+    {
+        var width = panelWidth * TabPanelWidthPercent;
+        return Mathf.Clamp(width, TabPanelMinWidth, TabPanelMaxWidth);
+    }
+
+    private static void ConfigureTabPanelRect(RectTransform rect, float tabPanelWidth)
+    {
+        if (rect == null)
+        {
+            return;
+        }
+
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 0.5f);
+        rect.offsetMin = new Vector2(TabPanelSidePadding, 0f);
+        rect.offsetMax = new Vector2(TabPanelSidePadding + tabPanelWidth, 0f);
+    }
+
+    private static void ConfigureTabListRect(RectTransform rect)
     {
         if (rect == null)
         {
@@ -554,8 +666,146 @@ internal static class ModMenuController
 
         rect.anchorMin = new Vector2(0f, 0f);
         rect.anchorMax = new Vector2(1f, 1f);
-        rect.offsetMin = new Vector2(ContentSidePadding, ContentBottomPadding);
+        rect.offsetMin = new Vector2(TabPanelInnerPadding, TabPanelInnerPadding + TabPanelButtonVerticalGap);
+        rect.offsetMax = new Vector2(-TabPanelInnerPadding, -(TabPanelInnerPadding + TabPanelButtonVerticalGap));
+    }
+
+    private static void ConfigureDetailContentRect(RectTransform rect, float tabPanelWidth)
+    {
+        if (rect == null)
+        {
+            return;
+        }
+
+        var leftOffset = ResolveDetailLeftOffset(tabPanelWidth);
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(1f, 1f);
+        rect.offsetMin = new Vector2(leftOffset, ContentBottomPadding);
         rect.offsetMax = new Vector2(-ContentSidePadding, -ContentTopPadding);
+    }
+
+    private static void ConfigureHeaderRect(RectTransform rect, float panelWidth, float detailLeftOffset,
+        float yOffset, float height)
+    {
+        if (rect == null)
+        {
+            return;
+        }
+
+        var availableWidth = Mathf.Max(120f, panelWidth - detailLeftOffset - ContentSidePadding);
+        var centeredX = (detailLeftOffset - ContentSidePadding) * 0.5f;
+        rect.anchorMin = new Vector2(0.5f, 1f);
+        rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = new Vector2(centeredX, yOffset);
+        rect.sizeDelta = new Vector2(availableWidth, height);
+    }
+
+    private static float ResolveDetailLeftOffset(float tabPanelWidth)
+    {
+        return TabPanelSidePadding + tabPanelWidth + TabPanelGap + ContentLeftGapFromSeparator;
+    }
+
+    private static GameObject CreateScrollArea(Transform parent, string name, out RectTransform contentRect,
+        out RectTransform viewportRect, out ScrollRect scrollRect)
+    {
+        scrollRect = ModMenuObjectFactory.CreateScrollRect(name, parent, out var rootRect);
+        var root = rootRect.gameObject;
+        scrollRect.horizontal = false;
+        scrollRect.vertical = true;
+        scrollRect.inertia = true;
+        scrollRect.movementType = ScrollRect.MovementType.Clamped;
+        scrollRect.scrollSensitivity = 24f;
+
+        var viewportImage = ModMenuObjectFactory.CreateImage("Viewport", rootRect, out viewportRect);
+        var viewport = viewportRect.gameObject;
+        StretchToParent(viewportRect);
+
+        viewportImage.color = new Color(0f, 0f, 0f, 0.001f);
+        viewportImage.raycastTarget = true;
+        ModMenuObjectFactory.GetOrAddRectMask2D(viewport);
+
+        contentRect = ModMenuObjectFactory.CreateRect("Content", viewportRect);
+        contentRect.anchorMin = new Vector2(0f, 1f);
+        contentRect.anchorMax = new Vector2(1f, 1f);
+        contentRect.pivot = new Vector2(0.5f, 1f);
+        contentRect.anchoredPosition = Vector2.zero;
+        contentRect.sizeDelta = Vector2.zero;
+
+        scrollRect.viewport = viewportRect;
+        scrollRect.content = contentRect;
+
+        return root;
+    }
+
+    private static GameObject CreateContentScrollArea(Transform parent, string name, out RectTransform viewportRect,
+        out ScrollRect scrollRect)
+    {
+        scrollRect = ModMenuObjectFactory.CreateScrollRect(name, parent, out var rootRect);
+        var root = rootRect.gameObject;
+        scrollRect.horizontal = false;
+        scrollRect.vertical = true;
+        scrollRect.inertia = true;
+        scrollRect.movementType = ScrollRect.MovementType.Clamped;
+        scrollRect.scrollSensitivity = 24f;
+
+        var viewportImage = ModMenuObjectFactory.CreateImage("Viewport", rootRect, out viewportRect);
+        var viewport = viewportRect.gameObject;
+        StretchToParent(viewportRect);
+
+        viewportImage.color = new Color(0f, 0f, 0f, 0.001f);
+        viewportImage.raycastTarget = true;
+        ModMenuObjectFactory.GetOrAddRectMask2D(viewport);
+
+        scrollRect.viewport = viewportRect;
+        scrollRect.content = null;
+
+        return root;
+    }
+
+    private static Scrollbar CreateVerticalScrollbar(RectTransform parent, string name)
+    {
+        var scrollbar = ModMenuObjectFactory.CreateScrollbar(name, parent, out var scrollbarRect, out var trackImage);
+        scrollbarRect.anchorMin = new Vector2(1f, 0f);
+        scrollbarRect.anchorMax = new Vector2(1f, 1f);
+        scrollbarRect.pivot = new Vector2(1f, 0.5f);
+        scrollbarRect.offsetMin = new Vector2(-(ScrollbarWidth + ScrollbarEdgePadding), ContentBottomPadding);
+        scrollbarRect.offsetMax = new Vector2(-ScrollbarEdgePadding, -ContentTopPadding);
+
+        ApplyRoundedImage(trackImage);
+        trackImage.color = TrackbarDarkGray;
+        trackImage.raycastTarget = true;
+
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+
+        var slidingAreaRect = ModMenuObjectFactory.CreateRect("Sliding Area", scrollbarRect);
+        slidingAreaRect.anchorMin = Vector2.zero;
+        slidingAreaRect.anchorMax = Vector2.one;
+        slidingAreaRect.offsetMin = new Vector2(2f, 2f);
+        slidingAreaRect.offsetMax = new Vector2(-2f, -2f);
+
+        var handleImage = ModMenuObjectFactory.CreateImage("Handle", slidingAreaRect, out var handleRect);
+        handleRect.anchorMin = Vector2.zero;
+        handleRect.anchorMax = Vector2.one;
+        handleRect.offsetMin = Vector2.zero;
+        handleRect.offsetMax = Vector2.zero;
+
+        ApplyRoundedImage(handleImage);
+        handleImage.color = new Color(0.35f, 0.64f, 0.95f, 0.95f);
+        handleImage.raycastTarget = true;
+
+        scrollbar.targetGraphic = handleImage;
+        scrollbar.handleRect = handleRect;
+        scrollbar.size = 0.2f;
+        scrollbar.value = 1f;
+
+        return scrollbar;
+    }
+
+    private static void SetScrollbarsVisible(bool showList, bool showContent)
+    {
+        _listScrollbar?.gameObject.SetActive(showList);
+        _contentScrollbar?.gameObject.SetActive(showContent);
     }
 
     private static void ConfigureListLayout(RectTransform rect)
@@ -565,25 +815,19 @@ internal static class ModMenuController
             return;
         }
 
-        var layoutGroup = rect.GetComponent<VerticalLayoutGroup>();
-        if (layoutGroup == null)
-        {
-            layoutGroup = rect.gameObject.AddComponent<VerticalLayoutGroup>();
-        }
-
+        var layoutGroup = rect.GetComponent<VerticalLayoutGroup>() ?? ModMenuObjectFactory.GetOrAddVerticalLayoutGroup(rect.gameObject);
         layoutGroup.childAlignment = TextAnchor.UpperCenter;
         layoutGroup.childControlWidth = true;
         layoutGroup.childForceExpandWidth = true;
         layoutGroup.childControlHeight = false;
         layoutGroup.childForceExpandHeight = false;
         layoutGroup.spacing = 10f;
+        var listInnerReduction = TabPanelInnerPadding * 2f;
+        var sideInset = Mathf.Max(0f, (TabButtonWidthReduction - listInnerReduction) * 0.5f);
+        var sideInsetInt = Mathf.RoundToInt(sideInset);
+        layoutGroup.padding = new RectOffset(sideInsetInt, sideInsetInt, 0, 0);
 
-        var fitter = rect.GetComponent<ContentSizeFitter>();
-        if (fitter == null)
-        {
-            fitter = rect.gameObject.AddComponent<ContentSizeFitter>();
-        }
-
+        var fitter = rect.GetComponent<ContentSizeFitter>() ?? ModMenuObjectFactory.GetOrAddContentSizeFitter(rect.gameObject);
         fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
     }
@@ -624,11 +868,47 @@ internal static class ModMenuController
             return;
         }
 
-        var list = _panelRoot.transform.Find("ModList");
+        var tabPanel = _panelRoot.transform.Find("TabPanel");
+        _tabPanelRoot = tabPanel != null ? tabPanel.gameObject : _tabPanelRoot;
+
+        var listParent = _tabPanelRoot != null ? _tabPanelRoot.transform : _panelRoot.transform;
+        var listView = listParent.Find("ModList");
+        _listViewRoot = listView != null ? listView.gameObject : _listViewRoot;
+        _listScrollRect = _listViewRoot != null ? _listViewRoot.GetComponent<ScrollRect>() : _listScrollRect;
+
+        var list = listParent.Find("ModList/Viewport/Content");
         _listRoot = list != null ? list.gameObject : _listRoot;
+        if (_listRoot == null && _listViewRoot != null)
+        {
+            _listRoot = _listViewRoot;
+        }
+
+        var listScrollbar = _panelRoot.transform.Find("ListScrollbar");
+        _listScrollbar = listScrollbar != null ? listScrollbar.GetComponent<Scrollbar>() : _listScrollbar;
+        if (_listScrollRect != null && _listScrollbar != null)
+        {
+            _listScrollRect.verticalScrollbar = _listScrollbar;
+            _listScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+        }
 
         var content = _panelRoot.transform.Find("ModContent");
         _contentRoot = content != null ? content.gameObject : _contentRoot;
+        _contentScrollRect = _contentRoot != null ? _contentRoot.GetComponent<ScrollRect>() : _contentScrollRect;
+
+        var contentViewport = _panelRoot.transform.Find("ModContent/Viewport");
+        _contentViewport = contentViewport != null ? contentViewport.GetComponent<RectTransform>() : _contentViewport;
+        if (_contentViewport == null && _contentRoot != null)
+        {
+            _contentViewport = _contentRoot.GetComponent<RectTransform>();
+        }
+
+        var contentScrollbar = _panelRoot.transform.Find("ContentScrollbar");
+        _contentScrollbar = contentScrollbar != null ? contentScrollbar.GetComponent<Scrollbar>() : _contentScrollbar;
+        if (_contentScrollRect != null && _contentScrollbar != null)
+        {
+            _contentScrollRect.verticalScrollbar = _contentScrollbar;
+            _contentScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+        }
 
         var title = _panelRoot.transform.Find("MenuTitle");
         _titleObject = title != null ? title.gameObject : _titleObject;
@@ -698,7 +978,7 @@ internal static class ModMenuController
             }
         }
 
-        var parent = _optionsAnchorButton.transform.parent;
+        var parent = _panelRoot?.transform;
         if (parent == null)
         {
             return;
@@ -706,7 +986,12 @@ internal static class ModMenuController
 
         if (_topBackButton == null)
         {
-            _topBackButton = CreateButton(parent, TopBackButtonName, "BACK", Gray, LightGray, Blue, Dark);
+            _topBackButton = CloneButtonFromTemplate(_optionsAnchorButton, parent, TopBackButtonName);
+            if (_topBackButton == null)
+            {
+                _topBackButton = CreateButton(parent, TopBackButtonName, "BACK", Gray, LightGray, Blue, Dark);
+            }
+
             if (_topBackButton != null)
             {
                 EnsureIgnoreLayout(_topBackButton.gameObject);
@@ -715,7 +1000,12 @@ internal static class ModMenuController
 
         if (_topResetButton == null)
         {
-            _topResetButton = CreateButton(parent, TopResetButtonName, "RESET GAME", Red, LightGray, Blue, Dark);
+            _topResetButton = CloneButtonFromTemplate(_optionsAnchorButton, parent, TopResetButtonName);
+            if (_topResetButton == null)
+            {
+                _topResetButton = CreateButton(parent, TopResetButtonName, "RESET GAME", Red, LightGray, Blue, Dark);
+            }
+
             if (_topResetButton != null)
             {
                 EnsureIgnoreLayout(_topResetButton.gameObject);
@@ -724,16 +1014,19 @@ internal static class ModMenuController
 
         if (_topBackButton != null)
         {
-            ConfigureTopButton(_topBackButton, "BACK", OnBackPressed, 0f);
+            RemoveOptionsButtonComponent(_topBackButton.gameObject);
+            ConfigureTopButton(_topBackButton, "BACK", OnBackPressed, 0f, BackButtonSpriteName);
         }
 
         if (_topResetButton != null)
         {
-            ConfigureTopButton(_topResetButton, "RESET GAME", ResetGame, 12f);
+            RemoveOptionsButtonComponent(_topResetButton.gameObject);
+            ConfigureTopButton(_topResetButton, "RESET GAME", ResetGame, 12f, ResetButtonSpriteName);
         }
     }
 
-    private static void ConfigureTopButton(Button button, string label, Action onClick, float labelYOffset)
+    private static void ConfigureTopButton(Button button, string label, Action onClick, float labelYOffset,
+        string spriteName)
     {
         if (button == null)
         {
@@ -742,6 +1035,7 @@ internal static class ModMenuController
 
         ResetButtonClick(button);
         SetButtonLabel(button, label);
+        ApplyButtonSprite(button, spriteName);
         button.interactable = true;
         AdjustButtonLabelOffset(button, labelYOffset);
         AddClickListener(button, onClick);
@@ -793,7 +1087,7 @@ internal static class ModMenuController
             ResetUiState();
             Time.timeScale = 1f;
 
-            var targetIndex = 0;
+            const int targetIndex = 0;
             var sceneCount = SceneManager.sceneCountInBuildSettings;
             if (sceneCount <= 0)
             {
@@ -813,29 +1107,41 @@ internal static class ModMenuController
         }
         catch (Exception)
         {
+            // ignored
         }
     }
 
     private static void ResetUiState()
     {
+        // Clear all static state so menu UI is rebuilt cleanly after a reset.
         DestroyUiObjects();
         _modButton = null;
         _optionsAnchorButton = null;
         _menuRoot = null;
         _menuGroup = null;
         _panelRoot = null;
+        _tabPanelRoot = null;
+        _listViewRoot = null;
         _listRoot = null;
+        _listScrollRect = null;
+        _listScrollbar = null;
         _contentRoot = null;
+        _contentViewport = null;
+        _contentScrollRect = null;
+        _contentScrollbar = null;
         _topBackButton = null;
         _topResetButton = null;
         _titleObject = null;
         _subtitleObject = null;
-        _menuView = MenuView.List;
         _registryVersion = -1;
         _optionsWasActive = false;
         _modWasActive = false;
+        _selectedEntryId = null;
+        _selectableUiPrototype = null;
+        _selectableUiType = null;
         _nextScanTime = 0f;
         Pages.Clear();
+        EntryButtons.Clear();
         LabelBaseY.Clear();
     }
 
@@ -864,30 +1170,97 @@ internal static class ModMenuController
 
     private static void SyncTopButtonPositions()
     {
-        if (_optionsAnchorButton != null && _topResetButton != null)
+        var panelRect = _panelRoot?.GetComponent<RectTransform>();
+        if (panelRect == null)
         {
-            CopyRectTransform(_optionsAnchorButton.GetComponent<RectTransform>(),
-                _topResetButton.GetComponent<RectTransform>());
+            return;
         }
 
-        if (_modButton != null && _topBackButton != null)
+        var panelHalfSize = panelRect.rect.size * 0.5f;
+
+        PositionButtonFromAnchor(_optionsAnchorButton?.GetComponent<RectTransform>(),
+            _topResetButton?.GetComponent<RectTransform>(), panelRect, panelHalfSize);
+
+        PositionButtonFromAnchor(_modButton?.GetComponent<RectTransform>(),
+            _topBackButton?.GetComponent<RectTransform>(), panelRect, panelHalfSize);
+    }
+
+    private static void PositionButtonFromAnchor(RectTransform source, RectTransform target, RectTransform panelRect,
+        Vector2 panelHalfSize)
+    {
+        if (source == null || target == null || panelRect == null)
         {
-            CopyRectTransform(_modButton.GetComponent<RectTransform>(),
-                _topBackButton.GetComponent<RectTransform>());
+            return;
         }
+
+        if (target.parent != panelRect)
+        {
+            target.SetParent(panelRect, false);
+        }
+
+        target.anchorMin = Vector2.zero;
+        target.anchorMax = Vector2.zero;
+        target.pivot = new Vector2(0.5f, 0.5f);
+        target.localScale = Vector3.one;
+        target.localRotation = Quaternion.identity;
+
+        var sourceSize = source.rect.size;
+        if (sourceSize.x <= 0.1f || sourceSize.y <= 0.1f)
+        {
+            sourceSize = source.sizeDelta;
+        }
+
+        if (sourceSize.x <= 0.1f)
+        {
+            sourceSize.x = 220f;
+        }
+
+        if (sourceSize.y <= 0.1f)
+        {
+            sourceSize.y = 60f;
+        }
+
+        target.sizeDelta = sourceSize;
+
+        // Convert source center into the panel's local anchored coordinate space.
+        var canvas = panelRect.GetComponentInParent<Canvas>();
+        var camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+        var sourceCenter = source.TransformPoint(source.rect.center);
+        var screenPoint = RectTransformUtility.WorldToScreenPoint(camera, sourceCenter);
+        if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(panelRect, screenPoint, camera,
+                out var localPoint))
+        {
+            target.anchoredPosition = source.anchoredPosition + panelHalfSize;
+            return;
+        }
+
+        target.anchoredPosition = localPoint + panelHalfSize;
+    }
+
+    private static float ResolveTopTrimAmount()
+    {
+        var anchorRect = _modButton != null
+            ? _modButton.GetComponent<RectTransform>()
+            : _optionsAnchorButton?.GetComponent<RectTransform>();
+        if (anchorRect == null)
+        {
+            return 36f;
+        }
+
+        var height = anchorRect.rect.height > 0.1f ? anchorRect.rect.height : anchorRect.sizeDelta.y;
+        if (height <= 0.1f)
+        {
+            height = 60f;
+        }
+
+        return height * 0.6f;
     }
 
     private static void SetTopButtonsVisible(bool visible, bool showReset)
     {
-        if (_topBackButton != null)
-        {
-            _topBackButton.gameObject.SetActive(visible);
-        }
+        _topBackButton?.gameObject.SetActive(visible);
 
-        if (_topResetButton != null)
-        {
-            _topResetButton.gameObject.SetActive(visible && showReset);
-        }
+        _topResetButton?.gameObject.SetActive(visible && showReset);
     }
 
     private static void CacheMenuButtonState()
@@ -898,15 +1271,9 @@ internal static class ModMenuController
 
     private static void ApplyMenuButtonVisibility(bool showOriginal)
     {
-        if (_optionsAnchorButton != null)
-        {
-            _optionsAnchorButton.gameObject.SetActive(showOriginal && _optionsWasActive);
-        }
+        _optionsAnchorButton?.gameObject.SetActive(showOriginal && _optionsWasActive);
 
-        if (_modButton != null)
-        {
-            _modButton.gameObject.SetActive(showOriginal && _modWasActive);
-        }
+        _modButton?.gameObject.SetActive(showOriginal && _modWasActive);
     }
 
     private static void CopyRectTransform(RectTransform source, RectTransform target)
@@ -937,13 +1304,93 @@ internal static class ModMenuController
             return;
         }
 
-        var layoutElement = target.GetComponent<LayoutElement>();
-        if (layoutElement == null)
+        var layoutElement = target.GetComponent<LayoutElement>() ?? ModMenuObjectFactory.GetOrAddLayoutElement(target);
+        layoutElement.ignoreLayout = true;
+    }
+
+    internal static void ApplySelectableUiTemplate(GameObject target)
+    {
+        if (target == null)
         {
-            layoutElement = target.AddComponent<LayoutElement>();
+            return;
         }
 
-        layoutElement.ignoreLayout = true;
+        if (!TryGetSelectableUiPrototype(out var prototype, out var componentType))
+        {
+            return;
+        }
+
+        if (HasComponentOfType(target, componentType))
+        {
+            return;
+        }
+
+        Component clonedComponent;
+        try
+        {
+            clonedComponent = AddComponentByManagedType(target, componentType);
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        if (clonedComponent == null)
+        {
+            return;
+        }
+
+        CopySelectableUiValues(prototype, clonedComponent);
+    }
+
+    private static bool HasComponentOfType(GameObject target, Type componentType)
+    {
+        if (target == null || componentType == null)
+        {
+            return false;
+        }
+
+        foreach (var component in target.GetComponents<Component>())
+        {
+            if (component == null)
+            {
+                continue;
+            }
+
+            var type = component.GetType();
+            if (type == componentType)
+            {
+                return true;
+            }
+
+            if (type.FullName == componentType.FullName)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Component AddComponentByManagedType(GameObject target, Type componentType)
+    {
+        if (target == null || componentType == null)
+        {
+            return null;
+        }
+
+        var addComponentDefinition = typeof(GameObject).GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(method => method.Name == nameof(GameObject.AddComponent) &&
+                                      method.IsGenericMethodDefinition &&
+                                      method.GetGenericArguments().Length == 1 &&
+                                      method.GetParameters().Length == 0);
+        if (addComponentDefinition == null)
+        {
+            return null;
+        }
+
+        var addComponent = addComponentDefinition.MakeGenericMethod(componentType);
+        return addComponent.Invoke(target, null) as Component;
     }
 
     private static void StretchToParent(RectTransform rect)
@@ -983,6 +1430,187 @@ internal static class ModMenuController
         }
 
         button.onClick = new Button.ButtonClickedEvent();
+    }
+
+    private static void RemoveOptionsButtonComponent(GameObject target)
+    {
+        if (target == null)
+        {
+            return;
+        }
+
+        foreach (var component in target.GetComponents<Component>())
+        {
+            if (component == null)
+            {
+                continue;
+            }
+
+            var type = component.GetType();
+            var matchesName = string.Equals(type.Name, OptionsButtonComponentName, StringComparison.Ordinal);
+            var matchesFullName = string.Equals(type.FullName, OptionsButtonComponentFullName, StringComparison.Ordinal);
+            if (!matchesName && !matchesFullName)
+            {
+                continue;
+            }
+
+            UnityEngine.Object.Destroy(component);
+        }
+    }
+
+    private static bool TryGetSelectableUiPrototype(out Component prototype, out Type componentType)
+    {
+        prototype = _selectableUiPrototype;
+        componentType = _selectableUiType;
+        if (prototype != null && componentType != null)
+        {
+            return true;
+        }
+
+        if (_modButton == null)
+        {
+            var existingButton = GameObject.Find(ModButtonName);
+            if (existingButton != null)
+            {
+                _modButton = existingButton.GetComponent<Button>();
+            }
+        }
+
+        if (_modButton == null)
+        {
+            return false;
+        }
+
+        prototype = FindSelectableUiComponent(_modButton.gameObject);
+        if (prototype == null)
+        {
+            return false;
+        }
+
+        componentType = prototype.GetType();
+        _selectableUiPrototype = prototype;
+        _selectableUiType = componentType;
+        return true;
+    }
+
+    private static Component FindSelectableUiComponent(GameObject root)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        foreach (var component in root.GetComponents<Component>())
+        {
+            if (component == null || !IsSelectableUiType(component.GetType()))
+            {
+                continue;
+            }
+
+            return component;
+        }
+
+        return null;
+    }
+
+    private static bool IsSelectableUiType(Type type)
+    {
+        if (type == null)
+        {
+            return false;
+        }
+
+        return string.Equals(type.FullName, SelectableUiComponentFullName, StringComparison.Ordinal);
+    }
+
+    private static void CopySelectableUiValues(Component source, Component target)
+    {
+        if (source == null || target == null)
+        {
+            return;
+        }
+
+        var sourceType = source.GetType();
+        var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+        foreach (var field in sourceType.GetFields(flags))
+        {
+            if (field.IsInitOnly || field.IsLiteral || !CanCopyMemberType(field.FieldType))
+            {
+                continue;
+            }
+
+            try
+            {
+                field.SetValue(target, field.GetValue(source));
+            }
+            catch (Exception)
+            {
+                // ignored
+            }
+        }
+
+        foreach (var property in sourceType.GetProperties(flags))
+        {
+            if (!property.CanRead || !property.CanWrite || property.GetIndexParameters().Length > 0)
+            {
+                continue;
+            }
+
+            if (!CanCopyMemberType(property.PropertyType))
+            {
+                continue;
+            }
+
+            try
+            {
+                property.SetValue(target, property.GetValue(source, null), null);
+            }
+            catch (Exception)
+            {
+                // ignored
+            }
+        }
+    }
+
+    private static bool CanCopyMemberType(Type type)
+    {
+        if (type == null)
+        {
+            return false;
+        }
+
+        if (type.IsPrimitive || type.IsEnum || type.IsValueType)
+        {
+            return true;
+        }
+
+        return type == typeof(string);
+    }
+
+    private static Button CloneButtonFromTemplate(Button templateButton, Transform parent, string name)
+    {
+        if (templateButton == null || parent == null)
+        {
+            return null;
+        }
+
+        var clone = UnityEngine.Object.Instantiate(templateButton.gameObject, parent, false);
+        if (clone == null)
+        {
+            return null;
+        }
+
+        clone.name = name;
+        var button = clone.GetComponent<Button>();
+        if (button == null)
+        {
+            return null;
+        }
+
+        ResetButtonClick(button);
+        EnsureIgnoreLayout(clone);
+        return button;
     }
 
     private static Button FindButtonByLabel(string label, string nameToken)
@@ -1046,14 +1674,9 @@ internal static class ModMenuController
     private static Button CreateButton(Transform parent, string name, string label, Color normal, Color highlighted,
         Color pressed, Color disabled)
     {
-        var buttonObject = new GameObject(name);
-        var rect = buttonObject.AddComponent<RectTransform>();
-        rect.SetParent(parent, false);
-
-        var image = buttonObject.AddComponent<Image>();
+        var button = ModMenuObjectFactory.CreateButton(name, parent, out _, out var image);
         ApplyRoundedImage(image);
 
-        var button = buttonObject.AddComponent<Button>();
         button.targetGraphic = image;
         button.transition = Selectable.Transition.ColorTint;
 
@@ -1144,8 +1767,8 @@ internal static class ModMenuController
                     dy = y - (size - radius - 1);
                 }
 
-                var index = y * size + x;
-                var outside = dx * dx + dy * dy > radius * radius;
+                var index = (y * size) + x;
+                var outside = (dx * dx) + (dy * dy) > radius * radius;
                 pixels[index] = outside ? new Color32(255, 255, 255, 0) : new Color32(255, 255, 255, 255);
             }
         }
@@ -1158,6 +1781,113 @@ internal static class ModMenuController
         _roundedSprite.name = "SurvivorModMenu_ControllerRoundedSprite";
 
         return _roundedSprite;
+    }
+
+    private static Sprite GetPanelFrameSprite()
+    {
+        if (_framePanelSprite != null)
+        {
+            return _framePanelSprite;
+        }
+
+        try
+        {
+            _framePanelSprite = SpriteManager.GetSprite("frame5_c4");
+        }
+        catch (Exception)
+        {
+            _framePanelSprite = null;
+        }
+
+        return _framePanelSprite;
+    }
+
+    private static void ApplyButtonSprite(Button button, string spriteName)
+    {
+        if (button == null || string.IsNullOrWhiteSpace(spriteName))
+        {
+            return;
+        }
+
+        var sprite = GetUiSprite(spriteName);
+        if (sprite == null)
+        {
+            return;
+        }
+
+        var image = button.GetComponent<Image>();
+        if (image == null)
+        {
+            return;
+        }
+
+        image.sprite = sprite;
+        image.type = Image.Type.Sliced;
+        image.preserveAspect = false;
+        image.color = Color.white;
+        image.pixelsPerUnitMultiplier = ButtonSpritePixelsPerUnit;
+        SetImageMemberFloat(image, "multipliedPixelsPerUnit", ButtonSpritePixelsPerUnit);
+
+        var colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = Color.white;
+        colors.pressedColor = Color.white;
+        colors.selectedColor = Color.white;
+        colors.disabledColor = new Color(0.65f, 0.65f, 0.65f, 1f);
+        colors.colorMultiplier = 1f;
+        button.colors = colors;
+    }
+
+    private static void SetImageMemberFloat(Image image, string memberName, float value)
+    {
+        if (image == null || string.IsNullOrWhiteSpace(memberName))
+        {
+            return;
+        }
+
+        // Il2Cpp Unity builds can expose this member as either a property or a backing field.
+        var type = image.GetType();
+
+        var property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (property != null && property.CanWrite && property.PropertyType == typeof(float))
+        {
+            property.SetValue(image, value, null);
+            return;
+        }
+
+        var field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (field == null || field.FieldType != typeof(float))
+        {
+            return;
+        }
+
+        field.SetValue(image, value);
+    }
+
+    private static Sprite GetUiSprite(string spriteName)
+    {
+        if (string.IsNullOrWhiteSpace(spriteName))
+        {
+            return null;
+        }
+
+        if (UiSpriteCache.TryGetValue(spriteName, out var cached))
+        {
+            return cached;
+        }
+
+        Sprite sprite;
+        try
+        {
+            sprite = SpriteManager.GetSprite(spriteName);
+        }
+        catch (Exception)
+        {
+            sprite = null;
+        }
+
+        UiSpriteCache[spriteName] = sprite;
+        return sprite;
     }
 
     private static void SetButtonLabel(Button button, string label)
@@ -1173,12 +1903,53 @@ internal static class ModMenuController
         }
 
         var textObject = CreateTextObject(button.transform, label, _textStyle,
-            _textStyle.FontSize, TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
+            _textStyle.fontSize, TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
         var rect = textObject.GetComponent<RectTransform>();
         rect.anchorMin = Vector2.zero;
         rect.anchorMax = Vector2.one;
         rect.offsetMin = Vector2.zero;
         rect.offsetMax = Vector2.zero;
+    }
+
+    private static void ConfigureTabPanelButtonText(Button button)
+    {
+        if (button == null)
+        {
+            return;
+        }
+
+        var tmpText = button.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (tmpText != null)
+        {
+            var maxSize = _textStyle.fontSize > 0f ? _textStyle.fontSize : tmpText.fontSize;
+            var minSize = Mathf.Min(maxSize, Mathf.Max(TabButtonMinFontSize, maxSize * 0.45f));
+
+            tmpText.enableWordWrapping = true;
+            tmpText.overflowMode = TextOverflowModes.Overflow;
+            tmpText.alignment = TextAlignmentOptions.Center;
+            tmpText.enableAutoSizing = true;
+            tmpText.fontSizeMax = maxSize;
+            tmpText.fontSizeMin = minSize;
+            tmpText.maxVisibleLines = TabButtonMaxVisibleLines;
+            tmpText.ForceMeshUpdate();
+            return;
+        }
+
+        var uiText = button.GetComponentInChildren<Text>(true);
+        if (uiText == null)
+        {
+            return;
+        }
+
+        var maxSizeInt = _textStyle.fontSize > 0f ? Mathf.RoundToInt(_textStyle.fontSize) : uiText.fontSize;
+        var minSizeInt = Mathf.RoundToInt(Mathf.Min(maxSizeInt, Mathf.Max(TabButtonMinFontSize, maxSizeInt * 0.45f)));
+
+        uiText.alignment = TextAnchor.MiddleCenter;
+        uiText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        uiText.verticalOverflow = VerticalWrapMode.Overflow;
+        uiText.resizeTextForBestFit = true;
+        uiText.resizeTextMaxSize = Mathf.Max(minSizeInt, maxSizeInt);
+        uiText.resizeTextMinSize = minSizeInt;
     }
 
     private static bool TrySetButtonLabel(GameObject root, string label)
@@ -1207,6 +1978,17 @@ internal static class ModMenuController
             return;
         }
 
+        var frameSprite = GetPanelFrameSprite();
+        if (frameSprite != null)
+        {
+            panelImage.sprite = frameSprite;
+            panelImage.type = Image.Type.Sliced;
+            panelImage.preserveAspect = false;
+            panelImage.color = Color.white;
+            panelImage.raycastTarget = true;
+            return;
+        }
+
         ApplyRoundedImage(panelImage);
         panelImage.color = new Color(0.22f, 0.25f, 0.35f, 1f);
         panelImage.raycastTarget = true;
@@ -1215,27 +1997,26 @@ internal static class ModMenuController
     private static GameObject CreateTextObject(Transform parent, string text, ModMenuTextStyle template,
         float fontSize, TextAnchor uiAlignment, TextAlignmentOptions tmpAlignment)
     {
-        var textObject = new GameObject("Text");
-        textObject.AddComponent<RectTransform>();
-        textObject.transform.SetParent(parent, false);
-
-        if (template.IsTmp && template.TmpFont != null)
+        if (template.isTmp && template.tmpFont != null)
         {
-            var tmp = textObject.AddComponent<TextMeshProUGUI>();
-            tmp.font = template.TmpFont;
+            var tmp = ModMenuObjectFactory.CreateTmpText("Text", parent, out _);
+            var tmpTextObject = tmp.gameObject;
+            tmp.font = template.tmpFont;
             tmp.fontSize = fontSize;
-            tmp.color = template.Color;
+            tmp.color = template.color;
             tmp.alignment = tmpAlignment;
             tmp.enableWordWrapping = false;
             tmp.SetText(text);
             tmp.raycastTarget = false;
-            return textObject;
+            return tmpTextObject;
         }
 
+        var rect = ModMenuObjectFactory.CreateRect("Text", parent);
+        var textObject = rect.gameObject;
         var uiText = textObject.AddComponent<Text>();
-        uiText.font = template.UiFont;
+        uiText.font = template.uiFont;
         uiText.fontSize = Mathf.RoundToInt(fontSize);
-        uiText.color = template.Color;
+        uiText.color = template.color;
         uiText.alignment = uiAlignment;
         uiText.text = text;
         uiText.raycastTarget = false;
@@ -1245,41 +2026,39 @@ internal static class ModMenuController
 
     private static ModMenuTextStyle BuildTextStyle(Button templateButton)
     {
-        var tmpText = templateButton != null
-            ? templateButton.GetComponentInChildren<TextMeshProUGUI>(true)
-            : null;
+        var tmpText = templateButton?.GetComponentInChildren<TextMeshProUGUI>(true);
         if (tmpText != null)
         {
             return new ModMenuTextStyle
             {
-                IsTmp = true,
-                TmpFont = tmpText.font,
-                UiFont = null,
-                FontSize = tmpText.fontSize,
-                Color = tmpText.color
+                isTmp = true,
+                tmpFont = tmpText.font,
+                uiFont = null,
+                fontSize = tmpText.fontSize,
+                color = tmpText.color
             };
         }
 
-        var uiText = templateButton != null ? templateButton.GetComponentInChildren<Text>(true) : null;
+        var uiText = templateButton?.GetComponentInChildren<Text>(true);
         if (uiText != null)
         {
             return new ModMenuTextStyle
             {
-                IsTmp = false,
-                TmpFont = null,
-                UiFont = uiText.font,
-                FontSize = uiText.fontSize,
-                Color = uiText.color
+                isTmp = false,
+                tmpFont = null,
+                uiFont = uiText.font,
+                fontSize = uiText.fontSize,
+                color = uiText.color
             };
         }
 
         return new ModMenuTextStyle
         {
-            IsTmp = false,
-            TmpFont = null,
-            UiFont = Resources.GetBuiltinResource<Font>("Arial.ttf"),
-            FontSize = 24f,
-            Color = Color.white
+            isTmp = false,
+            tmpFont = null,
+            uiFont = Resources.GetBuiltinResource<Font>("Arial.ttf"),
+            fontSize = 24f,
+            color = Color.white
         };
     }
 }

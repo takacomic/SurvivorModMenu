@@ -1,50 +1,73 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SurvivorModMenu;
 
+/// <summary>
+/// Registry used by mods to expose settings pages and sections inside SurvivorModMenu.
+/// </summary>
 public static class ModMenuRegistry
 {
     private const string PrimarySectionId = "__primary";
     private static readonly List<ModMenuEntry> Entries = new();
     internal static int Version { get; private set; }
 
+    /// <summary>
+    /// Registers or replaces a primary settings page for a mod.
+    /// </summary>
+    /// <param name="id">Stable unique mod identifier.</param>
+    /// <param name="displayName">Display name shown in the mod list.</param>
+    /// <param name="build">Callback that populates menu controls for the mod.</param>
+    /// <param name="sortOrder">Sort priority; lower values appear first.</param>
     public static void Register(string id, string displayName, Action<ModMenuBuilder> build, int sortOrder = 0)
     {
         RegisterSection(id, displayName, PrimarySectionId, build, sortOrder);
     }
 
-    public static void RegisterSupplement(string id, string sectionId, Action<ModMenuBuilder> build)
-    {
-        if (string.IsNullOrWhiteSpace(id))
-            return;
-
-        var displayName = id.Trim();
-        RegisterSection(id, displayName, sectionId, build);
-    }
-
+    /// <summary>
+    /// Registers or replaces an additional section for an existing mod page.
+    /// </summary>
+    /// <param name="id">Mod identifier to attach the section to.</param>
+    /// <param name="sectionId">Stable unique section identifier for that mod.</param>
+    /// <param name="build">Callback that populates only this section.</param>
     public static void RegisterSupplement(string id, string sectionId, Action<IModMenuSectionBuilder> build)
     {
         if (build == null)
+        {
             return;
+        }
 
-        RegisterSupplement(id, sectionId, builder => build(new ModMenuSectionBuilderAdapter(builder)));
+        if (!TryNormalizeKey(id, out var normalizedId))
+        {
+            return;
+        }
+
+        RegisterSection(normalizedId, normalizedId, sectionId,
+            builder => build(new ModMenuSectionBuilderAdapter(builder)));
     }
 
-    public static void RegisterSection(string id, string displayName, string sectionId, Action<ModMenuBuilder> build, int sortOrder = 0)
+    private static void RegisterSection(string id, string displayName, string sectionId, Action<ModMenuBuilder> build,
+        int sortOrder = 0)
     {
-        if (string.IsNullOrWhiteSpace(id))
+        if (!TryNormalizeKey(id, out var normalizedId))
+        {
             return;
+        }
 
-        if (string.IsNullOrWhiteSpace(sectionId))
+        if (!TryNormalizeKey(sectionId, out var normalizedSection))
+        {
             return;
+        }
 
         if (build == null)
+        {
             return;
+        }
 
-        var normalizedId = id.Trim();
-        var normalizedName = string.IsNullOrWhiteSpace(displayName) ? normalizedId : displayName.Trim();
-        var normalizedSection = sectionId.Trim();
+        var normalizedName = string.IsNullOrWhiteSpace(displayName)
+            ? normalizedId
+            : displayName.Trim();
 
         var entry = FindEntry(normalizedId);
         if (entry == null)
@@ -62,37 +85,63 @@ public static class ModMenuRegistry
         Version++;
     }
 
+    /// <summary>
+    /// Removes all registered sections for a mod id.
+    /// </summary>
+    /// <param name="id">Mod identifier to remove.</param>
+    /// <returns><c>true</c> when at least one entry was removed; otherwise <c>false</c>.</returns>
     public static bool Unregister(string id)
     {
-        if (string.IsNullOrWhiteSpace(id))
+        if (!TryNormalizeKey(id, out var normalizedId))
+        {
             return false;
+        }
 
-        var removed = Entries.RemoveAll(entry => entry.Id.Equals(id.Trim(), StringComparison.OrdinalIgnoreCase));
+        var removed = Entries.RemoveAll(entry =>
+            entry.Id.Equals(normalizedId, StringComparison.OrdinalIgnoreCase));
         if (removed <= 0)
+        {
             return false;
+        }
 
         Version++;
         return true;
     }
 
+    /// <summary>
+    /// Removes a single supplemental section from a mod entry.
+    /// </summary>
+    /// <param name="id">Mod identifier.</param>
+    /// <param name="sectionId">Section identifier to remove.</param>
+    /// <returns><c>true</c> when the section existed and was removed; otherwise <c>false</c>.</returns>
     public static bool UnregisterSupplement(string id, string sectionId)
     {
-        if (string.IsNullOrWhiteSpace(id))
+        if (!TryNormalizeKey(id, out var normalizedId))
+        {
             return false;
+        }
 
-        if (string.IsNullOrWhiteSpace(sectionId))
+        if (!TryNormalizeKey(sectionId, out var normalizedSection))
+        {
             return false;
+        }
 
-        var entry = FindEntry(id);
+        var entry = FindEntry(normalizedId);
         if (entry == null)
+        {
             return false;
+        }
 
-        var removed = entry.RemoveSection(sectionId.Trim());
+        var removed = entry.RemoveSection(normalizedSection);
         if (!removed)
+        {
             return false;
+        }
 
         if (!entry.HasSections)
+        {
             Entries.Remove(entry);
+        }
 
         Version++;
         return true;
@@ -105,20 +154,24 @@ public static class ModMenuRegistry
 
     internal static ModMenuEntry FindEntry(string id)
     {
-        if (string.IsNullOrWhiteSpace(id))
-            return null;
-
-        var normalizedId = id.Trim();
-        for (var i = 0; i < Entries.Count; i++)
+        if (!TryNormalizeKey(id, out var normalizedId))
         {
-            var entry = Entries[i];
-            if (!entry.Id.Equals(normalizedId, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            return entry;
+            return null;
         }
 
-        return null;
+        return Entries.FirstOrDefault(entry => entry.Id.Equals(normalizedId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryNormalizeKey(string value, out string normalizedValue)
+    {
+        normalizedValue = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        normalizedValue = value.Trim();
+        return true;
     }
 }
 
@@ -141,7 +194,9 @@ internal sealed class ModMenuEntry
     internal void Build(ModMenuBuilder builder)
     {
         for (var i = 0; i < _sections.Count; i++)
+        {
             _sections[i].Build(builder);
+        }
     }
 
     internal void SetSection(string sectionId, Action<ModMenuBuilder> build)
@@ -161,7 +216,9 @@ internal sealed class ModMenuEntry
     {
         var index = FindSectionIndex(sectionId);
         if (index < 0)
+        {
             return false;
+        }
 
         _sections.RemoveAt(index);
         return true;
@@ -172,7 +229,9 @@ internal sealed class ModMenuEntry
         for (var i = 0; i < _sections.Count; i++)
         {
             if (!_sections[i].Id.Equals(sectionId, StringComparison.OrdinalIgnoreCase))
+            {
                 continue;
+            }
 
             return i;
         }

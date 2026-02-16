@@ -3,19 +3,47 @@ using System.Collections.Generic;
 using System.Globalization;
 using Il2CppInterop.Runtime;
 using Il2CppTMPro;
+using Il2CppVampireSurvivors.Graphics;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 
 namespace SurvivorModMenu;
 
+/// <summary>
+/// Builds option rows for a single mod page inside SurvivorModMenu.
+/// </summary>
 public sealed class ModMenuBuilder
 {
     private const float DefaultRowHeight = 56f;
     private const float ControlHeight = 44f;
+    private const float DropdownOptionHeight = 24f;
+    private const float ToggleScaleMultiplier = 3.7f;
+    private const float ToggleBaseSpriteSize = 24f;
+    private const float ToggleControlSize = ToggleBaseSpriteSize * ToggleScaleMultiplier;
+    private const float ToggleRowVerticalPadding = 8f;
     private const float InputPadding = 10f;
     private const float SliderStep = 0.01f;
+    private const int SliderMaxCap = 9999;
+    private const float SliderControlMinX = 0.48f;
+    private const float SliderInputWidth = 80f;
+    private const float SliderInputGap = 8f;
+    private const float SliderLeftShiftInputWidths = 1.5f;
+    private const float SliderBackdropHeight = 5f;
+    private const float SliderHorizontalPadding = 10f;
+    private const float OptionLabelFontSize = 24f;
+    private const float OptionLabelMinFontSize = 12f;
+    private const float OptionLabelRightBoundary = 0.4f;
+    private const float OptionLabelRightPadding = 8f;
+    private const int OptionLabelMaxLines = 2;
+    private const float ActionButtonHeight = ControlHeight * 2f;
+    private const float ActionButtonRowPadding = 12f;
+    private const string SliderHandleSpriteName = "menu_square_flat_24";
+    private const string InputFrameSpriteName = "frame5_c4";
+    private const string ActionButtonSpriteName = "button_c9_mouseover";
+    private const string PanelFrameSpriteName = "frame5_c4";
     private const string CustomLabelName = "SurvivorModMenu_Label";
+    private const string ToggleTickName = "SurvivorModMenu_ToggleTick";
 
     private static readonly Color Gray = new(0.34f, 0.36f, 0.40f, 1f);
     private static readonly Color LightGray = new(0.57f, 0.60f, 0.66f, 1f);
@@ -23,52 +51,83 @@ public sealed class ModMenuBuilder
     private static readonly Color Green = new(0.24f, 0.68f, 0.38f, 1f);
     private static readonly Color Red = new(0.74f, 0.24f, 0.25f, 1f);
     private static readonly Color Dark = new(0.16f, 0.18f, 0.22f, 1f);
+    private static readonly Color SliderTrackDarkGray = new(0.23f, 0.23f, 0.23f, 0.9f);
 
     private static Sprite _roundedSprite;
-
-    private readonly RectTransform _contentRoot;
+    private static Sprite _toggleBackgroundSprite;
+    private static Sprite _toggleOnSprite;
+    private static Sprite _toggleOffSprite;
+    private static Sprite _sliderHandleSprite;
+    private static Sprite _inputFrameSprite;
+    private static Sprite _actionButtonSprite;
+    private static Sprite _panelFrameSprite;
     private readonly ModMenuTextStyle _textStyle;
     private readonly Action<Button, Action> _addClickListener;
 
-    internal ModMenuBuilder(RectTransform contentRoot, Button templateButton, ModMenuTextStyle textStyle,
+    internal ModMenuBuilder(RectTransform contentRoot, ModMenuTextStyle textStyle,
         Action<Button, Action> addClickListener)
     {
-        _contentRoot = contentRoot;
+        ContentRoot = contentRoot;
         _textStyle = textStyle;
         _addClickListener = addClickListener;
 
         EnsureLayout(contentRoot);
     }
 
-    public RectTransform ContentRoot => _contentRoot;
+    /// <summary>
+    /// Root container used for rows created by this builder.
+    /// </summary>
+    public RectTransform ContentRoot { get; }
 
+    /// <summary>
+    /// Adds a non-interactive text label row.
+    /// </summary>
+    /// <param name="text">Label content to render.</param>
+    /// <param name="fontSizeDelta">Optional delta applied to the default label font size.</param>
+    /// <returns>The created label game object.</returns>
     public GameObject AddLabel(string text, float fontSizeDelta = 0f)
     {
         var row = CreateRow($"Label_{text}", DefaultRowHeight);
-        var labelObject = CreateTextObject(row, text, _textStyle, _textStyle.FontSize + fontSizeDelta,
+        var labelObject = CreateTextObject(row, text, _textStyle, _textStyle.fontSize + fontSizeDelta,
             TextAnchor.MiddleLeft, TextAlignmentOptions.Left);
         StretchToParent(labelObject.GetComponent<RectTransform>());
         return labelObject;
     }
 
+    /// <summary>
+    /// Adds a clickable action button row.
+    /// </summary>
+    /// <param name="label">Button text.</param>
+    /// <param name="onClick">Callback invoked when the button is clicked.</param>
+    /// <returns>The created button instance.</returns>
     public Button AddButton(string label, Action onClick)
     {
-        var row = CreateRow($"Button_{label}", DefaultRowHeight + 4f);
+        var rowHeight = Mathf.Max(DefaultRowHeight + 4f, ActionButtonHeight + ActionButtonRowPadding);
+        var row = CreateRow($"Button_{label}", rowHeight);
         var button = CreateButton(row, "RowButton", label, Gray, LightGray, Blue, Dark);
         if (button == null)
         {
             return null;
         }
 
-        ConfigureControlRect(button.GetComponent<RectTransform>(), 0f, 1f, ControlHeight);
+        ConfigureControlRect(button.GetComponent<RectTransform>(), 0f, 1f, ActionButtonHeight);
+        ApplyActionButtonSprite(button);
         AddButtonClick(button, onClick);
 
         return button;
     }
 
+    /// <summary>
+    /// Adds a boolean toggle row.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user changes the value.</param>
+    /// <returns>The created toggle button instance.</returns>
     public Button AddToggle(string label, Func<bool> getValue, Action<bool> setValue)
     {
-        var row = CreateRow($"Toggle_{label}", DefaultRowHeight);
+        var rowHeight = Mathf.Max(DefaultRowHeight, ToggleControlSize + ToggleRowVerticalPadding);
+        var row = CreateRow($"Toggle_{label}", rowHeight);
         CreateRowLabel(row, label);
 
         var toggleButton = CreateButton(row, "ToggleButton", string.Empty, Red, LightGray, Blue, Dark);
@@ -77,7 +136,7 @@ public sealed class ModMenuBuilder
             return null;
         }
 
-        ConfigureControlRect(toggleButton.GetComponent<RectTransform>(), 0.68f, 1f, ControlHeight);
+        ConfigureRightAlignedControlRect(toggleButton.GetComponent<RectTransform>(), ToggleControlSize, ToggleControlSize);
 
         var hasGet = getValue != null;
         var hasSet = setValue != null;
@@ -100,6 +159,14 @@ public sealed class ModMenuBuilder
         return toggleButton;
     }
 
+    /// <summary>
+    /// Adds a string input field row.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user submits a new value.</param>
+    /// <param name="characterLimit">Maximum input length. Set to 0 for no limit.</param>
+    /// <returns>The created input field instance.</returns>
     public TMP_InputField AddStringField(string label, Func<string> getValue, Action<string> setValue,
         int characterLimit = 0)
     {
@@ -110,10 +177,19 @@ public sealed class ModMenuBuilder
             return input;
         }
 
-        AddSubmitListener(input, value => { setValue(value ?? string.Empty); });
+        AddSubmitListener(input, value => setValue(value ?? string.Empty));
         return input;
     }
 
+    /// <summary>
+    /// Adds an integer input field row with clamping.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user submits a new value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <returns>The created input field instance.</returns>
     public TMP_InputField AddIntField(string label, Func<int> getValue, Action<int> setValue,
         int min = int.MinValue, int max = int.MaxValue)
     {
@@ -143,6 +219,16 @@ public sealed class ModMenuBuilder
         return input;
     }
 
+    /// <summary>
+    /// Adds a float input field row with clamping.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user submits a new value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <param name="format">Numeric format used when displaying values.</param>
+    /// <returns>The created input field instance.</returns>
     public TMP_InputField AddFloatField(string label, Func<float> getValue, Action<float> setValue,
         float min = float.MinValue, float max = float.MaxValue, string format = "0.##")
     {
@@ -172,6 +258,16 @@ public sealed class ModMenuBuilder
         return input;
     }
 
+    /// <summary>
+    /// Adds a double input field row with clamping.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user submits a new value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <param name="format">Numeric format used when displaying values.</param>
+    /// <returns>The created input field instance.</returns>
     public TMP_InputField AddDoubleField(string label, Func<double> getValue, Action<double> setValue,
         double min = double.MinValue, double max = double.MaxValue, string format = "0.##")
     {
@@ -201,9 +297,19 @@ public sealed class ModMenuBuilder
         return input;
     }
 
+    /// <summary>
+    /// Adds an integer slider row with manual numeric input support.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user changes the value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <returns>The created slider instance.</returns>
     public Slider AddIntSlider(string label, Func<int> getValue, Action<int> setValue, int min, int max)
     {
         NormalizeRange(ref min, ref max);
+        CapSliderRange(ref min, ref max);
 
         var row = CreateRow($"IntSlider_{label}", DefaultRowHeight + 6f);
         CreateRowLabel(row, label);
@@ -215,8 +321,7 @@ public sealed class ModMenuBuilder
             return slider;
         }
 
-        ConfigureControlRect(slider.GetComponent<RectTransform>(), 0.48f, 0.83f, ControlHeight);
-        ConfigureControlRect(input.GetComponent<RectTransform>(), 0.85f, 1f, ControlHeight);
+        ConfigureSliderAndInputRect(slider.GetComponent<RectTransform>(), input.GetComponent<RectTransform>());
 
         slider.wholeNumbers = true;
         slider.minValue = min;
@@ -260,10 +365,21 @@ public sealed class ModMenuBuilder
         return slider;
     }
 
+    /// <summary>
+    /// Adds a float slider row with manual numeric input support.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user changes the value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <param name="format">Numeric format used when displaying values.</param>
+    /// <returns>The created slider instance.</returns>
     public Slider AddFloatSlider(string label, Func<float> getValue, Action<float> setValue,
         float min, float max, string format = "0.##")
     {
         NormalizeRange(ref min, ref max);
+        CapSliderRange(ref min, ref max);
 
         var row = CreateRow($"FloatSlider_{label}", DefaultRowHeight + 6f);
         CreateRowLabel(row, label);
@@ -275,8 +391,7 @@ public sealed class ModMenuBuilder
             return slider;
         }
 
-        ConfigureControlRect(slider.GetComponent<RectTransform>(), 0.48f, 0.83f, ControlHeight);
-        ConfigureControlRect(input.GetComponent<RectTransform>(), 0.85f, 1f, ControlHeight);
+        ConfigureSliderAndInputRect(slider.GetComponent<RectTransform>(), input.GetComponent<RectTransform>());
 
         slider.wholeNumbers = false;
         slider.minValue = min;
@@ -323,10 +438,21 @@ public sealed class ModMenuBuilder
         return slider;
     }
 
+    /// <summary>
+    /// Adds a double slider row with manual numeric input support.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="getValue">Callback used to read the current value.</param>
+    /// <param name="setValue">Callback invoked when the user changes the value.</param>
+    /// <param name="min">Minimum allowed value.</param>
+    /// <param name="max">Maximum allowed value.</param>
+    /// <param name="format">Numeric format used when displaying values.</param>
+    /// <returns>The created slider instance.</returns>
     public Slider AddDoubleSlider(string label, Func<double> getValue, Action<double> setValue,
         double min, double max, string format = "0.##")
     {
         NormalizeRange(ref min, ref max);
+        CapSliderRange(ref min, ref max);
 
         var row = CreateRow($"DoubleSlider_{label}", DefaultRowHeight + 6f);
         CreateRowLabel(row, label);
@@ -338,17 +464,14 @@ public sealed class ModMenuBuilder
             return slider;
         }
 
-        ConfigureControlRect(slider.GetComponent<RectTransform>(), 0.48f, 0.83f, ControlHeight);
-        ConfigureControlRect(input.GetComponent<RectTransform>(), 0.85f, 1f, ControlHeight);
+        ConfigureSliderAndInputRect(slider.GetComponent<RectTransform>(), input.GetComponent<RectTransform>());
 
         slider.wholeNumbers = false;
         var minFloat = ToSafeFloat(min);
         var maxFloat = ToSafeFloat(max);
         if (maxFloat < minFloat)
         {
-            var swap = minFloat;
-            minFloat = maxFloat;
-            maxFloat = swap;
+            (minFloat, maxFloat) = (maxFloat, minFloat);
         }
 
         slider.minValue = minFloat;
@@ -396,54 +519,239 @@ public sealed class ModMenuBuilder
         return slider;
     }
 
+    /// <summary>
+    /// Adds a dropdown selection row.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row.</param>
+    /// <param name="options">Selectable options in display order.</param>
+    /// <param name="getSelectedIndex">Callback used to read the current selected index.</param>
+    /// <param name="setSelectedIndex">Callback invoked when the user selects a new option.</param>
+    /// <returns>The created dropdown trigger button.</returns>
     public Button AddDropdown(string label, IReadOnlyList<string> options, Func<int> getSelectedIndex,
         Action<int> setSelectedIndex)
     {
+        const float overlaySidePadding = 34f;
+        const float overlayTopPadding = 106f;
+        const float overlayBottomPadding = 132f;
+        const float overlayTitleTop = 30f;
+        const float overlayTitleHeight = 56f;
+        const float overlayOptionSpacing = 8f;
+        const float overlayScrollbarWidth = 12f;
+        const float overlayScrollbarPadding = 6f;
+        const float closeButtonBottom = 24f;
+        const float closeButtonWidth = 240f;
+
         var optionCount = options?.Count ?? 0;
+        var rowHeight = Mathf.Max(DefaultRowHeight, ActionButtonHeight + ActionButtonRowPadding);
+        var row = CreateRow($"Dropdown_{label}", rowHeight);
+        CreateRowLabel(row, label);
 
-        var mainRow = CreateRow($"Dropdown_{label}", DefaultRowHeight);
-        CreateRowLabel(mainRow, label);
-
-        var dropdownButton = CreateButton(mainRow, "DropdownButton", string.Empty, Gray, LightGray, Blue, Dark);
+        var dropdownButton = CreateButton(row, "DropdownButton", string.Empty, Gray, LightGray, Blue, Dark);
         if (dropdownButton == null)
         {
             return null;
         }
 
-        ConfigureControlRect(dropdownButton.GetComponent<RectTransform>(), 0.58f, 1f, ControlHeight);
+        ConfigureControlRect(dropdownButton.GetComponent<RectTransform>(), 0.58f, 1f, ActionButtonHeight);
+        ApplyActionButtonSprite(dropdownButton);
 
-        var listRow = CreateRow($"DropdownList_{label}", 0f);
-        listRow.gameObject.SetActive(false);
-
-        var listRoot = new GameObject("Options");
-        var listRootRect = listRoot.AddComponent<RectTransform>();
-        listRootRect.SetParent(listRow, false);
-        listRootRect.anchorMin = new Vector2(0.58f, 0f);
-        listRootRect.anchorMax = new Vector2(1f, 1f);
-        listRootRect.pivot = new Vector2(1f, 0.5f);
-        listRootRect.offsetMin = Vector2.zero;
-        listRootRect.offsetMax = Vector2.zero;
-
-        var listLayout = listRoot.AddComponent<VerticalLayoutGroup>();
-        listLayout.childControlWidth = true;
-        listLayout.childControlHeight = false;
-        listLayout.childForceExpandWidth = true;
-        listLayout.childForceExpandHeight = false;
-        listLayout.spacing = 6f;
-        listLayout.padding = new RectOffset(0, 0, 2, 2);
-
-        var optionButtons = new List<Button>(Mathf.Max(1, optionCount));
-        var listLayoutElement = listRow.GetComponent<LayoutElement>();
-
-        var hasOptions = optionCount > 0;
-        if (!hasOptions)
+        if (optionCount <= 0)
         {
             SetButtonLabel(dropdownButton, "(none)", _textStyle);
             dropdownButton.interactable = false;
             return dropdownButton;
         }
 
-        var NormalizeIndex = new Func<int, int>(index =>
+        var panelRect = FindAncestorRectByName(ContentRoot, "Panel") ?? ContentRoot;
+        var overlayRect = ModMenuObjectFactory.CreateRect($"DropdownOverlay_{label}", panelRect);
+        var overlayRoot = overlayRect.gameObject;
+        overlayRect.anchorMin = Vector2.zero;
+        overlayRect.anchorMax = Vector2.one;
+        overlayRect.pivot = new Vector2(0.5f, 0.5f);
+        overlayRect.offsetMin = Vector2.zero;
+        overlayRect.offsetMax = Vector2.zero;
+
+        var overlayLayout = ModMenuObjectFactory.GetOrAddLayoutElement(overlayRoot);
+        overlayLayout.ignoreLayout = true;
+        overlayLayout.preferredHeight = 0f;
+        overlayLayout.minHeight = 0f;
+
+        var overlayBlocker = ModMenuObjectFactory.GetOrAddComponent<Image>(overlayRoot);
+        overlayBlocker.color = new Color(0f, 0f, 0f, 0.001f);
+        overlayBlocker.raycastTarget = true;
+
+        var overlayPanelImage = ModMenuObjectFactory.CreateImage("DropdownPanel", overlayRect, out var overlayPanelRect);
+        StretchToParent(overlayPanelRect);
+        ApplyFramePanelStyle(overlayPanelImage);
+
+        var titleObject = CreateTextObject(overlayPanelRect, $"SELECT {label}", _textStyle, OptionLabelFontSize,
+            TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
+        var titleRect = titleObject.GetComponent<RectTransform>();
+        if (titleRect != null)
+        {
+            titleRect.anchorMin = new Vector2(0.5f, 1f);
+            titleRect.anchorMax = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.anchoredPosition = new Vector2(0f, -overlayTitleTop);
+            titleRect.sizeDelta = new Vector2(Mathf.Max(220f, panelRect.rect.width - 120f), overlayTitleHeight);
+        }
+
+        var listScrollRect = ModMenuObjectFactory.CreateScrollRect("DropdownOptionsScroll", overlayPanelRect,
+            out var listRootRect);
+        listRootRect.anchorMin = new Vector2(0f, 0f);
+        listRootRect.anchorMax = new Vector2(1f, 1f);
+        listRootRect.offsetMin = new Vector2(overlaySidePadding, overlayBottomPadding);
+        listRootRect.offsetMax = new Vector2(-overlaySidePadding, -overlayTopPadding);
+
+        listScrollRect.horizontal = false;
+        listScrollRect.vertical = true;
+        listScrollRect.inertia = true;
+        listScrollRect.movementType = ScrollRect.MovementType.Clamped;
+        listScrollRect.scrollSensitivity = 20f;
+
+        var viewportImage = ModMenuObjectFactory.CreateImage("Viewport", listRootRect, out var viewportRect);
+        viewportRect.anchorMin = Vector2.zero;
+        viewportRect.anchorMax = Vector2.one;
+        viewportRect.offsetMin = Vector2.zero;
+        viewportRect.offsetMax = new Vector2(-(overlayScrollbarWidth + overlayScrollbarPadding), 0f);
+        viewportImage.color = new Color(0f, 0f, 0f, 0.001f);
+        viewportImage.raycastTarget = true;
+        ModMenuObjectFactory.GetOrAddRectMask2D(viewportRect.gameObject);
+
+        var contentRect = ModMenuObjectFactory.CreateRect("Content", viewportRect);
+        contentRect.anchorMin = new Vector2(0f, 1f);
+        contentRect.anchorMax = new Vector2(1f, 1f);
+        contentRect.pivot = new Vector2(0.5f, 1f);
+        contentRect.anchoredPosition = Vector2.zero;
+        contentRect.sizeDelta = Vector2.zero;
+
+        var listLayout = ModMenuObjectFactory.GetOrAddVerticalLayoutGroup(contentRect.gameObject);
+        listLayout.childControlWidth = true;
+        listLayout.childControlHeight = false;
+        listLayout.childForceExpandWidth = true;
+        listLayout.childForceExpandHeight = false;
+        listLayout.spacing = overlayOptionSpacing;
+        listLayout.padding = new RectOffset(0, 0, 0, 0);
+
+        var listFitter = ModMenuObjectFactory.GetOrAddContentSizeFitter(contentRect.gameObject);
+        listFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        listFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        listScrollRect.viewport = viewportRect;
+        listScrollRect.content = contentRect;
+
+        var dropdownScrollbar = CreateDropdownScrollbar(listRootRect);
+        listScrollRect.verticalScrollbar = dropdownScrollbar;
+        listScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+        var optionButtons = new List<Button>(Mathf.Max(1, optionCount));
+        for (var i = 0; i < optionCount; i++)
+        {
+            var option = options?[i] ?? string.Empty;
+            var optionButton = CreateButton(contentRect, $"Option_{i}", option, Gray, LightGray, Blue, Dark);
+            if (optionButton == null)
+            {
+                continue;
+            }
+
+            var optionRect = optionButton.GetComponent<RectTransform>();
+            if (optionRect != null)
+            {
+                optionRect.anchorMin = new Vector2(0f, 1f);
+                optionRect.anchorMax = new Vector2(1f, 1f);
+                optionRect.pivot = new Vector2(0.5f, 1f);
+                optionRect.anchoredPosition = Vector2.zero;
+                optionRect.localScale = Vector3.one;
+                optionRect.sizeDelta = new Vector2(0f, ActionButtonHeight);
+            }
+
+            var optionLayout = ModMenuObjectFactory.GetOrAddLayoutElement(optionButton.gameObject);
+            optionLayout.ignoreLayout = false;
+            optionLayout.preferredHeight = ActionButtonHeight;
+            optionLayout.minHeight = ActionButtonHeight;
+
+            ApplyActionButtonSprite(optionButton);
+
+            var optionIndex = i;
+            AddButtonClick(optionButton, () =>
+            {
+                setSelectedIndex?.Invoke(optionIndex);
+                var selectedIndex = getSelectedIndex?.Invoke() ?? optionIndex;
+                UpdateOptionVisuals(selectedIndex);
+                SetOverlayOpen(false);
+            });
+
+            optionButtons.Add(optionButton);
+        }
+
+        var closeButton = CreateButton(overlayPanelRect, "DropdownCloseButton", "CLOSE", Gray, LightGray, Blue, Dark);
+        if (closeButton != null)
+        {
+            var closeRect = closeButton.GetComponent<RectTransform>();
+            if (closeRect != null)
+            {
+                closeRect.anchorMin = new Vector2(0.5f, 0f);
+                closeRect.anchorMax = new Vector2(0.5f, 0f);
+                closeRect.pivot = new Vector2(0.5f, 0f);
+                closeRect.anchoredPosition = new Vector2(0f, closeButtonBottom);
+                closeRect.sizeDelta = new Vector2(closeButtonWidth, ActionButtonHeight);
+            }
+
+            ApplyActionButtonSprite(closeButton);
+            AddButtonClick(closeButton, () => { SetOverlayOpen(false); });
+        }
+
+        var initialIndex = getSelectedIndex?.Invoke() ?? 0;
+        UpdateOptionVisuals(initialIndex);
+        SetOverlayOpen(false);
+
+        AddButtonClick(dropdownButton, () =>
+        {
+            var selectedIndex = getSelectedIndex?.Invoke() ?? initialIndex;
+            UpdateOptionVisuals(selectedIndex);
+            SetOverlayOpen(true);
+        });
+
+        return dropdownButton;
+
+        void SetOverlayOpen(bool open)
+        {
+            overlayRoot.SetActive(open);
+            if (!open)
+            {
+                return;
+            }
+
+            // Render overlay above everything else and reset list scroll each time it opens.
+            overlayRect.SetAsLastSibling();
+            overlayPanelRect.SetAsLastSibling();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
+            Canvas.ForceUpdateCanvases();
+            listScrollRect.verticalNormalizedPosition = 1f;
+        }
+
+        void UpdateOptionVisuals(int currentIndex)
+        {
+            var normalized = NormalizeIndex(currentIndex);
+            var optionText = options?[normalized] ?? string.Empty;
+            SetButtonLabel(dropdownButton, $"{optionText} v", _textStyle);
+
+            for (var i = 0; i < optionButtons.Count; i++)
+            {
+                var button = optionButtons[i];
+                if (button == null)
+                {
+                    continue;
+                }
+
+                var optionTextValue = options?[i] ?? string.Empty;
+                var selected = i == normalized;
+                var decoratedText = selected ? $"{optionTextValue} <" : optionTextValue;
+                SetButtonLabel(button, decoratedText, _textStyle);
+            }
+        }
+
+        int NormalizeIndex(int index)
         {
             if (index < 0)
             {
@@ -456,83 +764,50 @@ public sealed class ModMenuBuilder
             }
 
             return index;
-        });
-
-        void UpdateOptionVisuals(int currentIndex)
-        {
-            var normalized = NormalizeIndex(currentIndex);
-            var optionText = options[normalized] ?? string.Empty;
-            SetButtonLabel(dropdownButton, $"{optionText} v", _textStyle);
-
-            for (var i = 0; i < optionButtons.Count; i++)
-            {
-                var button = optionButtons[i];
-                if (button == null)
-                {
-                    continue;
-                }
-
-                var selected = i == normalized;
-                ApplyButtonStyle(button, selected ? Green : Gray, LightGray, Blue, Dark);
-            }
         }
 
-        void SetListOpen(bool open)
+        Scrollbar CreateDropdownScrollbar(RectTransform parent)
         {
-            listRow.gameObject.SetActive(open);
-            var height = open ? optionCount * (ControlHeight + 6f) + 6f : 0f;
-            listLayoutElement.preferredHeight = height;
-            listLayoutElement.minHeight = height;
-            LayoutRebuilder.ForceRebuildLayoutImmediate(_contentRoot);
+            var scrollbar = ModMenuObjectFactory.CreateScrollbar("DropdownScrollbar", parent, out var scrollbarRect,
+                out var trackImage);
+            scrollbarRect.anchorMin = new Vector2(1f, 0f);
+            scrollbarRect.anchorMax = new Vector2(1f, 1f);
+            scrollbarRect.pivot = new Vector2(1f, 0.5f);
+            scrollbarRect.offsetMin = new Vector2(-overlayScrollbarWidth, 0f);
+            scrollbarRect.offsetMax = Vector2.zero;
+
+            ApplyRoundedImage(trackImage);
+            trackImage.color = SliderTrackDarkGray;
+            trackImage.raycastTarget = true;
+
+            scrollbar.direction = Scrollbar.Direction.BottomToTop;
+
+            var slidingAreaRect = ModMenuObjectFactory.CreateRect("Sliding Area", scrollbarRect);
+            slidingAreaRect.anchorMin = Vector2.zero;
+            slidingAreaRect.anchorMax = Vector2.one;
+            slidingAreaRect.offsetMin = new Vector2(2f, 2f);
+            slidingAreaRect.offsetMax = new Vector2(-2f, -2f);
+
+            var handleImage = ModMenuObjectFactory.CreateImage("Handle", slidingAreaRect, out var handleRect);
+            StretchToParent(handleRect);
+
+            ApplyRoundedImage(handleImage);
+            handleImage.color = new Color(0.35f, 0.64f, 0.95f, 0.95f);
+            handleImage.raycastTarget = true;
+
+            scrollbar.targetGraphic = handleImage;
+            scrollbar.handleRect = handleRect;
+            scrollbar.size = 0.2f;
+            scrollbar.value = 1f;
+
+            return scrollbar;
         }
-
-        for (var i = 0; i < optionCount; i++)
-        {
-            var option = options[i] ?? string.Empty;
-            var optionButton = CreateButton(listRootRect, $"Option_{i}", option, Gray, LightGray, Blue, Dark);
-            if (optionButton == null)
-            {
-                continue;
-            }
-
-            var optionRect = optionButton.GetComponent<RectTransform>();
-            StretchToParent(optionRect);
-
-            var optionLayout = optionButton.gameObject.GetComponent<LayoutElement>();
-            if (optionLayout == null)
-            {
-                optionLayout = optionButton.gameObject.AddComponent<LayoutElement>();
-            }
-
-            optionLayout.preferredHeight = ControlHeight;
-            optionLayout.minHeight = ControlHeight;
-
-            var optionIndex = i;
-            AddButtonClick(optionButton, () =>
-            {
-                setSelectedIndex?.Invoke(optionIndex);
-                var selectedIndex = getSelectedIndex != null ? getSelectedIndex() : optionIndex;
-                UpdateOptionVisuals(selectedIndex);
-                SetListOpen(false);
-            });
-
-            optionButtons.Add(optionButton);
-        }
-
-        var initialIndex = getSelectedIndex != null ? getSelectedIndex() : 0;
-        UpdateOptionVisuals(initialIndex);
-        SetListOpen(false);
-
-        AddButtonClick(dropdownButton, () =>
-        {
-            var selectedIndex = getSelectedIndex != null ? getSelectedIndex() : initialIndex;
-            UpdateOptionVisuals(selectedIndex);
-            SetListOpen(!listRow.gameObject.activeSelf);
-        });
-
-        return dropdownButton;
     }
 
+    /// <summary>
+    /// Adds vertical spacing between rows.
+    /// </summary>
+    /// <param name="height">Requested spacer height in UI units.</param>
     public void AddSpacer(float height)
     {
         var spacer = CreateRow("Spacer", Mathf.Max(0f, height));
@@ -551,6 +826,7 @@ public sealed class ModMenuBuilder
             return null;
         }
 
+        ApplySelectableUiTemplate(input.gameObject);
         ConfigureControlRect(input.GetComponent<RectTransform>(), 0.58f, 1f, ControlHeight);
         input.contentType = contentType;
         input.characterLimit = Mathf.Max(characterLimit, 0);
@@ -562,34 +838,28 @@ public sealed class ModMenuBuilder
 
     private TMP_InputField CreateNumberInput(Transform parent, string name)
     {
-        var root = new GameObject(name);
-        var rootRect = root.AddComponent<RectTransform>();
-        rootRect.SetParent(parent, false);
+        var input = ModMenuObjectFactory.CreateInputField(name, parent, out var rootRect, out var image);
+        var root = rootRect.gameObject;
+        ApplyInputFrameStyle(image);
 
-        var image = root.AddComponent<Image>();
-        ApplyRoundedImage(image);
-        image.color = Dark;
-
-        var input = root.AddComponent<TMP_InputField>();
         input.targetGraphic = image;
         input.selectionColor = new Color(0.6f, 0.72f, 0.95f, 0.45f);
         input.caretColor = Color.white;
 
-        var textArea = new GameObject("Text Area");
-        var textAreaRect = textArea.AddComponent<RectTransform>();
-        textAreaRect.SetParent(rootRect, false);
+        var textAreaRect = ModMenuObjectFactory.CreateRect("Text Area", rootRect);
+        var textArea = textAreaRect.gameObject;
         textAreaRect.anchorMin = Vector2.zero;
         textAreaRect.anchorMax = Vector2.one;
         textAreaRect.offsetMin = new Vector2(InputPadding, 6f);
         textAreaRect.offsetMax = new Vector2(-InputPadding, -6f);
-        textArea.AddComponent<RectMask2D>();
+        ModMenuObjectFactory.GetOrAddRectMask2D(textArea);
 
-        var placeholderObject = CreateTextObject(textAreaRect, "Enter value", _textStyle, _textStyle.FontSize - 2f,
+        var placeholderObject = CreateTextObject(textAreaRect, "Enter value", _textStyle, _textStyle.fontSize - 2f,
             TextAnchor.MiddleLeft, TextAlignmentOptions.Left);
         placeholderObject.name = "Placeholder";
         SetTextColor(placeholderObject, new Color(0.83f, 0.86f, 0.91f, 0.55f));
 
-        var textObject = CreateTextObject(textAreaRect, string.Empty, _textStyle, _textStyle.FontSize - 2f,
+        var textObject = CreateTextObject(textAreaRect, string.Empty, _textStyle, _textStyle.fontSize - 2f,
             TextAnchor.MiddleLeft, TextAlignmentOptions.Left);
         textObject.name = "Text";
 
@@ -612,55 +882,38 @@ public sealed class ModMenuBuilder
         return input;
     }
 
-    private Slider CreateSlider(Transform parent, string name)
+    private static Slider CreateSlider(Transform parent, string name)
     {
-        var sliderObject = new GameObject(name);
-        var sliderRect = sliderObject.AddComponent<RectTransform>();
-        sliderRect.SetParent(parent, false);
+        var slider = ModMenuObjectFactory.CreateSlider(name, parent, out var sliderRect, out var background);
+        ApplySelectableUiTemplate(slider.gameObject);
+        background.color = Color.clear;
+        background.raycastTarget = true;
 
-        var background = sliderObject.AddComponent<Image>();
-        ApplyRoundedImage(background);
-        background.color = Dark;
-
-        var slider = sliderObject.AddComponent<Slider>();
         slider.transition = Selectable.Transition.ColorTint;
         slider.direction = Slider.Direction.LeftToRight;
 
-        var fillArea = new GameObject("Fill Area");
-        var fillAreaRect = fillArea.AddComponent<RectTransform>();
-        fillAreaRect.SetParent(sliderRect, false);
-        fillAreaRect.anchorMin = Vector2.zero;
-        fillAreaRect.anchorMax = Vector2.one;
-        fillAreaRect.offsetMin = new Vector2(10f, 10f);
-        fillAreaRect.offsetMax = new Vector2(-10f, -10f);
+        var trackImage = ModMenuObjectFactory.CreateImage("Backdrop", sliderRect, out var trackRect);
+        trackRect.anchorMin = new Vector2(0f, 0.5f);
+        trackRect.anchorMax = new Vector2(1f, 0.5f);
+        trackRect.pivot = new Vector2(0.5f, 0.5f);
+        trackRect.anchoredPosition = Vector2.zero;
+        trackRect.sizeDelta = new Vector2(-SliderHorizontalPadding * 2f, SliderBackdropHeight);
+        ApplyRoundedImage(trackImage);
+        trackImage.color = SliderTrackDarkGray;
+        trackImage.raycastTarget = true;
 
-        var fill = new GameObject("Fill");
-        var fillRect = fill.AddComponent<RectTransform>();
-        fillRect.SetParent(fillAreaRect, false);
-        StretchToParent(fillRect);
+        var handleAreaRect = ModMenuObjectFactory.CreateRect("Handle Slide Area", trackRect);
+        StretchToParent(handleAreaRect);
 
-        var fillImage = fill.AddComponent<Image>();
-        ApplyRoundedImage(fillImage);
-        fillImage.color = Green;
+        var handleImage = ModMenuObjectFactory.CreateImage("Handle", handleAreaRect, out var handleRect);
+        ApplySelectableUiTemplate(handleImage.gameObject);
+        handleRect.anchorMin = new Vector2(0.5f, 0.5f);
+        handleRect.anchorMax = new Vector2(0.5f, 0.5f);
+        handleRect.pivot = new Vector2(0.5f, 0.5f);
+        handleRect.anchoredPosition = Vector2.zero;
+        ApplySliderHandleStyle(handleImage, handleRect);
 
-        var handleArea = new GameObject("Handle Slide Area");
-        var handleAreaRect = handleArea.AddComponent<RectTransform>();
-        handleAreaRect.SetParent(sliderRect, false);
-        handleAreaRect.anchorMin = Vector2.zero;
-        handleAreaRect.anchorMax = Vector2.one;
-        handleAreaRect.offsetMin = new Vector2(10f, 6f);
-        handleAreaRect.offsetMax = new Vector2(-10f, -6f);
-
-        var handle = new GameObject("Handle");
-        var handleRect = handle.AddComponent<RectTransform>();
-        handleRect.SetParent(handleAreaRect, false);
-        handleRect.sizeDelta = new Vector2(20f, 30f);
-
-        var handleImage = handle.AddComponent<Image>();
-        ApplyRoundedImage(handleImage);
-        handleImage.color = Blue;
-
-        slider.fillRect = fillRect;
+        slider.fillRect = null;
         slider.handleRect = handleRect;
         slider.targetGraphic = handleImage;
 
@@ -670,14 +923,10 @@ public sealed class ModMenuBuilder
     private Button CreateButton(Transform parent, string name, string text, Color normal, Color highlighted,
         Color pressed, Color disabled)
     {
-        var buttonObject = new GameObject(name);
-        var buttonRect = buttonObject.AddComponent<RectTransform>();
-        buttonRect.SetParent(parent, false);
-
-        var image = buttonObject.AddComponent<Image>();
+        var button = ModMenuObjectFactory.CreateButton(name, parent, out _, out var image);
+        ApplySelectableUiTemplate(button.gameObject);
         ApplyRoundedImage(image);
 
-        var button = buttonObject.AddComponent<Button>();
         button.targetGraphic = image;
         button.transition = Selectable.Transition.ColorTint;
 
@@ -687,30 +936,36 @@ public sealed class ModMenuBuilder
         return button;
     }
 
+    private static void ApplySelectableUiTemplate(GameObject target)
+    {
+        ModMenuController.ApplySelectableUiTemplate(target);
+    }
+
     private void CreateRowLabel(RectTransform row, string label)
     {
-        var labelObject = CreateTextObject(row, label, _textStyle, _textStyle.FontSize + 1f,
-            TextAnchor.MiddleLeft, TextAlignmentOptions.Left);
+        var labelObject = CreateTextObject(row, label, _textStyle, OptionLabelFontSize,
+            TextAnchor.UpperLeft, TextAlignmentOptions.TopLeft);
         var labelRect = labelObject.GetComponent<RectTransform>();
         if (labelRect == null)
         {
             return;
         }
 
-        labelRect.anchorMin = new Vector2(0f, 0.5f);
-        labelRect.anchorMax = new Vector2(0.54f, 0.5f);
-        labelRect.pivot = new Vector2(0f, 0.5f);
+        labelRect.anchorMin = new Vector2(0f, 0f);
+        labelRect.anchorMax = new Vector2(OptionLabelRightBoundary, 1f);
+        labelRect.pivot = new Vector2(0f, 1f);
         labelRect.anchoredPosition = Vector2.zero;
-        labelRect.sizeDelta = new Vector2(0f, DefaultRowHeight);
+        labelRect.offsetMin = Vector2.zero;
+        labelRect.offsetMax = new Vector2(-OptionLabelRightPadding, 0f);
+        ConfigureOptionLabelText(labelObject);
     }
 
     private RectTransform CreateRow(string name, float height)
     {
-        var row = new GameObject(name);
-        var rowRect = row.AddComponent<RectTransform>();
-        rowRect.SetParent(_contentRoot, false);
+        var rowRect = ModMenuObjectFactory.CreateRect(name, ContentRoot);
+        var row = rowRect.gameObject;
 
-        var layout = row.AddComponent<LayoutElement>();
+        var layout = ModMenuObjectFactory.GetOrAddLayoutElement(row);
         layout.preferredHeight = height;
         layout.minHeight = height;
 
@@ -735,6 +990,36 @@ public sealed class ModMenuBuilder
         rect.sizeDelta = new Vector2(0f, height);
     }
 
+    private static void ConfigureSliderAndInputRect(RectTransform sliderRect, RectTransform inputRect)
+    {
+        ConfigureRightAlignedControlRect(inputRect, SliderInputWidth, ControlHeight);
+        if (sliderRect == null)
+        {
+            return;
+        }
+
+        sliderRect.anchorMin = new Vector2(SliderControlMinX, 0.5f);
+        sliderRect.anchorMax = new Vector2(1f, 0.5f);
+        sliderRect.pivot = new Vector2(1f, 0.5f);
+        sliderRect.anchoredPosition = new Vector2(-(SliderInputWidth * SliderLeftShiftInputWidths), 0f);
+        sliderRect.sizeDelta = new Vector2(-(SliderInputWidth + SliderInputGap), ControlHeight);
+    }
+
+    private static void ConfigureRightAlignedControlRect(RectTransform rect, float width, float height,
+        float rightPadding = 0f)
+    {
+        if (rect == null)
+        {
+            return;
+        }
+
+        rect.anchorMin = new Vector2(1f, 0.5f);
+        rect.anchorMax = new Vector2(1f, 0.5f);
+        rect.pivot = new Vector2(1f, 0.5f);
+        rect.anchoredPosition = new Vector2(-rightPadding, 0f);
+        rect.sizeDelta = new Vector2(width, height);
+    }
+
     private static void ApplyRoundedImage(Image image)
     {
         if (image == null)
@@ -745,6 +1030,160 @@ public sealed class ModMenuBuilder
         image.sprite = GetRoundedSprite();
         image.type = Image.Type.Sliced;
         image.raycastTarget = true;
+    }
+
+    private static void ApplyActionButtonSprite(Button button)
+    {
+        if (button == null)
+        {
+            return;
+        }
+
+        if (_actionButtonSprite == null)
+        {
+            _actionButtonSprite = TryGetGameSprite(ActionButtonSpriteName);
+        }
+
+        var image = button.GetComponent<Image>();
+        if (image == null || _actionButtonSprite == null)
+        {
+            return;
+        }
+
+        image.sprite = _actionButtonSprite;
+        image.type = Image.Type.Sliced;
+        image.preserveAspect = false;
+        image.color = Color.white;
+        image.raycastTarget = true;
+
+        var colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = Color.white;
+        colors.pressedColor = GetPressedTint(Color.white);
+        colors.selectedColor = Color.white;
+        colors.disabledColor = new Color(0.65f, 0.65f, 0.65f, 1f);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.08f;
+        button.colors = colors;
+    }
+
+    private static void ApplyFramePanelStyle(Image image)
+    {
+        if (image == null)
+        {
+            return;
+        }
+
+        if (_panelFrameSprite == null)
+        {
+            _panelFrameSprite = TryGetGameSprite(PanelFrameSpriteName);
+        }
+
+        if (_panelFrameSprite == null)
+        {
+            ApplyRoundedImage(image);
+            image.color = new Color(0.22f, 0.25f, 0.35f, 1f);
+            return;
+        }
+
+        image.sprite = _panelFrameSprite;
+        image.type = Image.Type.Sliced;
+        image.preserveAspect = false;
+        image.color = Color.white;
+        image.raycastTarget = true;
+    }
+
+    private static RectTransform FindAncestorRectByName(Transform start, string targetName)
+    {
+        if (start == null || string.IsNullOrWhiteSpace(targetName))
+        {
+            return null;
+        }
+
+        var current = start;
+        while (current != null)
+        {
+            if (current.name.Equals(targetName, StringComparison.Ordinal))
+            {
+                return current as RectTransform ?? current.GetComponent<RectTransform>();
+            }
+
+            current = current.parent;
+        }
+
+        return null;
+    }
+
+    private static void ApplyInputFrameStyle(Image image)
+    {
+        if (image == null)
+        {
+            return;
+        }
+
+        if (_inputFrameSprite == null)
+        {
+            _inputFrameSprite = TryGetGameSprite(InputFrameSpriteName);
+        }
+
+        if (_inputFrameSprite == null)
+        {
+            ApplyRoundedImage(image);
+            image.color = Dark;
+            return;
+        }
+
+        image.sprite = _inputFrameSprite;
+        image.type = Image.Type.Sliced;
+        image.preserveAspect = false;
+        image.color = Color.white;
+        image.raycastTarget = true;
+    }
+
+    private static void ApplySliderHandleStyle(Image image, RectTransform rect)
+    {
+        if (image == null)
+        {
+            return;
+        }
+
+        if (_sliderHandleSprite == null)
+        {
+            _sliderHandleSprite = TryGetGameSprite(SliderHandleSpriteName);
+        }
+
+        if (_sliderHandleSprite == null)
+        {
+            ApplyRoundedImage(image);
+            image.color = Blue;
+            if (rect != null)
+            {
+                var fallbackSize = ToggleBaseSpriteSize * ToggleScaleMultiplier;
+                rect.sizeDelta = new Vector2(fallbackSize, fallbackSize);
+            }
+
+            return;
+        }
+
+        image.sprite = _sliderHandleSprite;
+        image.type = Image.Type.Simple;
+        image.preserveAspect = true;
+        image.color = Color.white;
+        image.raycastTarget = true;
+        image.SetNativeSize();
+
+        if (rect == null)
+        {
+            return;
+        }
+
+        var size = image.rectTransform.sizeDelta;
+        if (size.x <= 0.1f || size.y <= 0.1f)
+        {
+            size = new Vector2(ToggleBaseSpriteSize, ToggleBaseSpriteSize);
+        }
+
+        rect.sizeDelta = size * ToggleScaleMultiplier;
     }
 
     private static Sprite GetRoundedSprite()
@@ -772,26 +1211,22 @@ public sealed class ModMenuBuilder
                 var dx = 0f;
                 var dy = 0f;
 
-                if (x < radius)
+                dx = x switch
                 {
-                    dx = radius - x;
-                }
-                else if (x > size - radius - 1)
-                {
-                    dx = x - (size - radius - 1);
-                }
+                    < radius => radius - x,
+                    > size - radius - 1 => x - (size - radius - 1),
+                    _ => dx
+                };
 
-                if (y < radius)
+                dy = y switch
                 {
-                    dy = radius - y;
-                }
-                else if (y > size - radius - 1)
-                {
-                    dy = y - (size - radius - 1);
-                }
+                    < radius => radius - y,
+                    > size - radius - 1 => y - (size - radius - 1),
+                    _ => dy
+                };
 
-                var index = y * size + x;
-                var outside = dx * dx + dy * dy > radius * radius;
+                var index = (y * size) + x;
+                var outside = (dx * dx) + (dy * dy) > radius * radius;
                 pixels[index] = outside ? new Color32(255, 255, 255, 0) : new Color32(255, 255, 255, 255);
             }
         }
@@ -851,20 +1286,32 @@ public sealed class ModMenuBuilder
             return;
         }
 
+        // TMP fires both onSubmit and onEndEdit for Enter in some contexts.
+        // Track the submit path so callbacks run exactly once per confirmation.
         var submitted = false;
 
-        Action<string> submitHandler = value =>
-        {
-            submitted = true;
-            callback(value ?? string.Empty);
-        };
-        var submitAction = DelegateSupport.ConvertDelegate<UnityAction<string>>(submitHandler);
+        var submitAction = DelegateSupport.ConvertDelegate<UnityAction<string>>((Action<string>)SubmitHandler);
         if (submitAction != null)
         {
             input.onSubmit.AddListener(submitAction);
         }
 
-        Action<string> endEditHandler = value =>
+        var endEditAction = DelegateSupport.ConvertDelegate<UnityAction<string>>((Action<string>)EndEditHandler);
+        if (endEditAction == null)
+        {
+            return;
+        }
+
+        input.onEndEdit.AddListener(endEditAction);
+        return;
+
+        void SubmitHandler(string value)
+        {
+            submitted = true;
+            callback(value ?? string.Empty);
+        }
+
+        void EndEditHandler(string value)
         {
             if (submitted)
             {
@@ -878,14 +1325,7 @@ public sealed class ModMenuBuilder
             }
 
             callback(value ?? string.Empty);
-        };
-        var endEditAction = DelegateSupport.ConvertDelegate<UnityAction<string>>(endEditHandler);
-        if (endEditAction == null)
-        {
-            return;
         }
-
-        input.onEndEdit.AddListener(endEditAction);
     }
 
     private static void UpdateToggleVisual(Button button, bool value)
@@ -895,9 +1335,132 @@ public sealed class ModMenuBuilder
             return;
         }
 
-        var color = value ? Green : Red;
-        ApplyButtonStyle(button, color, LightGray, Blue, Dark);
-        SetButtonLabel(button, value ? "ON" : "OFF", default);
+        var tickImage = ConfigureToggleSpriteVisual(button);
+        if (tickImage == null)
+        {
+            var fallbackColor = value ? Green : Red;
+            ApplyButtonStyle(button, fallbackColor, fallbackColor, GetPressedTint(fallbackColor), Dark);
+            SetButtonLabel(button, value ? "ON" : "OFF", default);
+            return;
+        }
+
+        ApplyButtonStyle(button, Color.white, Color.white, GetPressedTint(Color.white), Dark);
+        SetButtonLabel(button, string.Empty, default);
+        ApplyToggleStateSprite(tickImage, value);
+    }
+
+    private static Image ConfigureToggleSpriteVisual(Button button)
+    {
+        if (button == null)
+        {
+            return null;
+        }
+
+        if (_toggleBackgroundSprite == null)
+        {
+            _toggleBackgroundSprite = TryGetGameSprite("menu_checkbox_24_bg");
+        }
+
+        if (_toggleOnSprite == null)
+        {
+            _toggleOnSprite = TryGetGameSprite("yes16");
+        }
+
+        if (_toggleOffSprite == null)
+        {
+            _toggleOffSprite = TryGetGameSprite("no16");
+        }
+
+        if (_toggleBackgroundSprite == null || _toggleOnSprite == null)
+        {
+            return null;
+        }
+
+        var buttonImage = button.GetComponent<Image>();
+        if (buttonImage == null)
+        {
+            return null;
+        }
+
+        buttonImage.sprite = _toggleBackgroundSprite;
+        buttonImage.type = Image.Type.Simple;
+        buttonImage.preserveAspect = true;
+        buttonImage.color = Color.white;
+        ConfigureRightAlignedControlRect(button.GetComponent<RectTransform>(), ToggleControlSize, ToggleControlSize);
+        buttonImage.SetNativeSize();
+
+        var buttonRect = button.GetComponent<RectTransform>();
+        var scaledButtonSize = buttonImage.rectTransform.sizeDelta * ToggleScaleMultiplier;
+        ConfigureRightAlignedControlRect(buttonRect, scaledButtonSize.x, scaledButtonSize.y);
+
+        var tickTransform = button.transform.Find(ToggleTickName);
+        var tickObject = tickTransform?.gameObject;
+        if (tickObject == null)
+        {
+            var createdTickRect = ModMenuObjectFactory.CreateRect(ToggleTickName, button.transform);
+            tickObject = createdTickRect.gameObject;
+        }
+
+        var tickRect = tickObject.GetComponent<RectTransform>() ?? ModMenuObjectFactory.GetOrAddComponent<RectTransform>(tickObject);
+        tickRect.anchorMin = new Vector2(0.5f, 0.5f);
+        tickRect.anchorMax = new Vector2(0.5f, 0.5f);
+        tickRect.pivot = new Vector2(0.5f, 0.5f);
+        tickRect.anchoredPosition = Vector2.zero;
+        tickRect.sizeDelta = Vector2.zero;
+        tickRect.SetAsLastSibling();
+
+        var tickImage = tickObject.GetComponent<Image>() ?? ModMenuObjectFactory.GetOrAddComponent<Image>(tickObject);
+        tickImage.type = Image.Type.Simple;
+        tickImage.preserveAspect = true;
+        tickImage.color = Color.white;
+        tickImage.raycastTarget = false;
+        ApplyToggleStateSprite(tickImage, true);
+
+        return tickImage;
+    }
+
+    private static void ApplyToggleStateSprite(Image tickImage, bool value)
+    {
+        if (tickImage == null)
+        {
+            return;
+        }
+
+        var sprite = value ? _toggleOnSprite : _toggleOffSprite;
+        if (sprite == null)
+        {
+            tickImage.gameObject.SetActive(value);
+            return;
+        }
+
+        tickImage.sprite = sprite;
+        tickImage.SetNativeSize();
+
+        var tickRect = tickImage.rectTransform;
+        if (tickRect != null)
+        {
+            var scaledSize = tickRect.sizeDelta * ToggleScaleMultiplier;
+            tickRect.sizeDelta = scaledSize;
+        }
+
+        tickImage.gameObject.SetActive(true);
+    }
+
+    private static Sprite TryGetGameSprite(string spriteName)
+    {
+        if (string.IsNullOrWhiteSpace(spriteName))
+        {
+            return null;
+        }
+
+        try
+        {
+            return SpriteManager.GetSprite(spriteName);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static void ApplyButtonStyle(Button button, Color normal, Color highlighted, Color pressed, Color disabled)
@@ -926,6 +1489,13 @@ public sealed class ModMenuBuilder
         image.color = normal;
     }
 
+    private static Color GetPressedTint(Color baseColor)
+    {
+        const float darkenFactor = 0.82f;
+        return new Color(baseColor.r * darkenFactor, baseColor.g * darkenFactor, baseColor.b * darkenFactor,
+            baseColor.a);
+    }
+
     private static bool TryParseInt(string value, out int parsed)
     {
         var style = NumberStyles.Integer;
@@ -935,6 +1505,33 @@ public sealed class ModMenuBuilder
         }
 
         return int.TryParse(value, style, CultureInfo.CurrentCulture, out parsed);
+    }
+
+    private static void CapSliderRange(ref int min, ref int max)
+    {
+        max = Mathf.Min(max, SliderMaxCap);
+        if (min > max)
+        {
+            min = max;
+        }
+    }
+
+    private static void CapSliderRange(ref float min, ref float max)
+    {
+        max = Mathf.Min(max, SliderMaxCap);
+        if (min > max)
+        {
+            min = max;
+        }
+    }
+
+    private static void CapSliderRange(ref double min, ref double max)
+    {
+        max = Math.Min(max, SliderMaxCap);
+        if (min > max)
+        {
+            min = max;
+        }
     }
 
     private static bool TryParseFloat(string value, out float parsed)
@@ -969,19 +1566,14 @@ public sealed class ModMenuBuilder
         input.SetTextWithoutNotify(value ?? string.Empty);
     }
 
-    private void EnsureLayout(RectTransform contentRoot)
+    private static void EnsureLayout(RectTransform contentRoot)
     {
         if (contentRoot == null)
         {
             return;
         }
 
-        var layout = contentRoot.GetComponent<VerticalLayoutGroup>();
-        if (layout == null)
-        {
-            layout = contentRoot.gameObject.AddComponent<VerticalLayoutGroup>();
-        }
-
+        var layout = contentRoot.GetComponent<VerticalLayoutGroup>() ?? ModMenuObjectFactory.GetOrAddVerticalLayoutGroup(contentRoot.gameObject);
         layout.childAlignment = TextAnchor.UpperLeft;
         layout.childControlWidth = true;
         layout.childForceExpandWidth = true;
@@ -989,12 +1581,7 @@ public sealed class ModMenuBuilder
         layout.childForceExpandHeight = false;
         layout.spacing = 10f;
 
-        var fitter = contentRoot.GetComponent<ContentSizeFitter>();
-        if (fitter == null)
-        {
-            fitter = contentRoot.gameObject.AddComponent<ContentSizeFitter>();
-        }
-
+        var fitter = contentRoot.GetComponent<ContentSizeFitter>() ?? ModMenuObjectFactory.GetOrAddContentSizeFitter(contentRoot.gameObject);
         fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
     }
@@ -1020,6 +1607,41 @@ public sealed class ModMenuBuilder
         }
     }
 
+    private static void ConfigureOptionLabelText(GameObject textObject)
+    {
+        if (textObject == null)
+        {
+            return;
+        }
+
+        var tmp = textObject.GetComponent<TextMeshProUGUI>();
+        if (tmp != null)
+        {
+            tmp.alignment = TextAlignmentOptions.TopLeft;
+            tmp.enableWordWrapping = true;
+            tmp.enableAutoSizing = true;
+            tmp.fontSizeMax = OptionLabelFontSize;
+            tmp.fontSizeMin = OptionLabelMinFontSize;
+            tmp.maxVisibleLines = OptionLabelMaxLines;
+            tmp.overflowMode = TextOverflowModes.Truncate;
+            tmp.ForceMeshUpdate();
+            return;
+        }
+
+        var uiText = textObject.GetComponent<Text>();
+        if (uiText == null)
+        {
+            return;
+        }
+
+        uiText.alignment = TextAnchor.UpperLeft;
+        uiText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        uiText.verticalOverflow = VerticalWrapMode.Truncate;
+        uiText.resizeTextForBestFit = true;
+        uiText.resizeTextMaxSize = Mathf.RoundToInt(OptionLabelFontSize);
+        uiText.resizeTextMinSize = Mathf.RoundToInt(OptionLabelMinFontSize);
+    }
+
     private static void StretchToParent(RectTransform rect)
     {
         if (rect == null)
@@ -1036,27 +1658,26 @@ public sealed class ModMenuBuilder
     private static GameObject CreateTextObject(Transform parent, string text, ModMenuTextStyle style, float fontSize,
         TextAnchor uiAlignment, TextAlignmentOptions tmpAlignment)
     {
-        var textObject = new GameObject("Text");
-        var rect = textObject.AddComponent<RectTransform>();
-        rect.SetParent(parent, false);
-
-        if (style.IsTmp && style.TmpFont != null)
+        if (style.isTmp && style.tmpFont != null)
         {
-            var tmp = textObject.AddComponent<TextMeshProUGUI>();
-            tmp.font = style.TmpFont;
+            var tmp = ModMenuObjectFactory.CreateTmpText("Text", parent, out _);
+            var tmpTextObject = tmp.gameObject;
+            tmp.font = style.tmpFont;
             tmp.fontSize = fontSize;
-            tmp.color = style.Color;
+            tmp.color = style.color;
             tmp.alignment = tmpAlignment;
             tmp.enableWordWrapping = false;
             tmp.SetText(text);
             tmp.raycastTarget = false;
-            return textObject;
+            return tmpTextObject;
         }
 
+        var rect = ModMenuObjectFactory.CreateRect("Text", parent);
+        var textObject = rect.gameObject;
         var uiText = textObject.AddComponent<Text>();
-        uiText.font = style.UiFont;
+        uiText.font = style.uiFont;
         uiText.fontSize = Mathf.RoundToInt(fontSize);
-        uiText.color = style.Color;
+        uiText.color = style.color;
         uiText.alignment = uiAlignment;
         uiText.text = text;
         uiText.raycastTarget = false;
@@ -1072,7 +1693,7 @@ public sealed class ModMenuBuilder
         }
 
         var labelObject = GetOrCreateCustomLabel(button.transform, style,
-            style.FontSize > 0f ? style.FontSize : 24f);
+            style.fontSize > 0f ? style.fontSize : 24f);
         SetLabelText(labelObject, label);
         DisableOtherText(button.gameObject, labelObject);
     }
@@ -1085,19 +1706,19 @@ public sealed class ModMenuBuilder
             return existing.gameObject;
         }
 
-        if (style.UiFont == null && style.TmpFont == null)
+        if (style.uiFont == null && style.tmpFont == null)
         {
             style = new ModMenuTextStyle
             {
-                IsTmp = false,
-                UiFont = Resources.GetBuiltinResource<Font>("Arial.ttf"),
-                FontSize = 24f,
-                Color = Color.white
+                isTmp = false,
+                uiFont = Resources.GetBuiltinResource<Font>("Arial.ttf"),
+                fontSize = 24f,
+                color = Color.white
             };
         }
 
         var textObject = CreateTextObject(parent, string.Empty, style, fontSize,
-            TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
+            TextAnchor.MiddleCenter, TextAlignmentOptions.BaselineGeoAligned);
         textObject.name = CustomLabelName;
 
         var rect = textObject.GetComponent<RectTransform>();
@@ -1154,47 +1775,17 @@ public sealed class ModMenuBuilder
 
     private static int Clamp(int value, int min, int max)
     {
-        if (value < min)
-        {
-            return min;
-        }
-
-        if (value > max)
-        {
-            return max;
-        }
-
-        return value;
+        return Mathf.Clamp(value, min, max);
     }
 
     private static float Clamp(float value, float min, float max)
     {
-        if (value < min)
-        {
-            return min;
-        }
-
-        if (value > max)
-        {
-            return max;
-        }
-
-        return value;
+        return Mathf.Clamp(value, min, max);
     }
 
     private static double Clamp(double value, double min, double max)
     {
-        if (value < min)
-        {
-            return min;
-        }
-
-        if (value > max)
-        {
-            return max;
-        }
-
-        return value;
+        return Math.Clamp(value, min, max);
     }
 
     private static float ToSafeFloat(double value)
@@ -1234,37 +1825,25 @@ public sealed class ModMenuBuilder
 
     private static void NormalizeRange(ref int min, ref int max)
     {
-        if (min <= max)
+        if (min > max)
         {
-            return;
+            (min, max) = (max, min);
         }
-
-        var swap = min;
-        min = max;
-        max = swap;
     }
 
     private static void NormalizeRange(ref float min, ref float max)
     {
-        if (min <= max)
+        if (min > max)
         {
-            return;
+            (min, max) = (max, min);
         }
-
-        var swap = min;
-        min = max;
-        max = swap;
     }
 
     private static void NormalizeRange(ref double min, ref double max)
     {
-        if (min <= max)
+        if (min > max)
         {
-            return;
+            (min, max) = (max, min);
         }
-
-        var swap = min;
-        min = max;
-        max = swap;
     }
 }
