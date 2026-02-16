@@ -5,7 +5,10 @@ using System.Reflection;
 using Il2CppInterop.Runtime;
 using Il2CppTMPro;
 using Il2CppVampireSurvivors.Graphics;
+using Il2CppVampireSurvivors.UI;
+using MelonLoader;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -18,9 +21,12 @@ internal static class ModMenuController
     private const string MenuRootName = "SurvivorModMenu_ModMenu";
     private const string TopBackButtonName = "SurvivorModMenu_TopBackButton";
     private const string TopResetButtonName = "SurvivorModMenu_TopResetButton";
-    private const string OptionsButtonComponentName = "OptionsButton";
-    private const string OptionsButtonComponentFullName = "Il2CppVampireSurvivors.UI.OptionsButton";
-    private const string SelectableUiComponentFullName = "Il2CppVampireSurvivors.UI.SelectableUI";
+    private const string VanillaMenuNavigatorsName = "Navigators (Menu)";
+    private const string CustomNavigatorsRootName = "SurvivorModMenu_Navigators";
+    private const string LeftNavigatorName = "SurvivorModMenu_NavigatorLeft";
+    private const string RightNavigatorName = "SurvivorModMenu_NavigatorRight";
+    private const string OptionsButtonTypeName = "VampireSurvivors.UI.OptionsButton";
+    private const string SelectableUiTypeName = "VampireSurvivors.UI.SelectableUI";
     private const string ModsButtonSpriteName = "button_c9_mouseover";
     private const string BackButtonSpriteName = "button_c8_normal";
     private const string ResetButtonSpriteName = "button_c5_mouseover";
@@ -43,6 +49,15 @@ internal static class ModMenuController
     private const int TabButtonMaxVisibleLines = 2;
     private const float ScrollbarWidth = 14f;
     private const float ScrollbarEdgePadding = 4f;
+    private const float NavigatorArrowSize = 72f;
+    private const float NavigatorArrowSidePadding = 28f;
+    private const int NavigatorArrowAnimationFps = 10;
+    private const float NavigatorArrowObjectGap = 6f;
+    private const float DirectionalRepeatDelay = 0.18f;
+    private const float SliderDirectionalStep = 0.01f;
+    private const float MouseMoveThresholdSquared = 36f;
+    private const float ScrollIntoViewPadding = 8f;
+    private const float NavigationTraceThrottleSeconds = 1f;
 
     private static readonly Color Gray = new(0.34f, 0.36f, 0.40f, 1f);
     private static readonly Color LightGray = new(0.57f, 0.60f, 0.66f, 1f);
@@ -51,6 +66,8 @@ internal static class ModMenuController
     private static readonly Color Red = new(0.74f, 0.24f, 0.25f, 1f);
     private static readonly Color Dark = new(0.16f, 0.18f, 0.22f, 1f);
     private static readonly Color TrackbarDarkGray = new(0.23f, 0.23f, 0.23f, 0.9f);
+    private static readonly List<ModMenuSelectableNavigationTarget> NavigationTargets = new();
+    private static readonly Vector3[] VisibilityCornerBuffer = new Vector3[4];
 
     private static Sprite _roundedSprite;
     private static Sprite _framePanelSprite;
@@ -66,10 +83,17 @@ internal static class ModMenuController
     private static GameObject _listRoot;
     private static ScrollRect _listScrollRect;
     private static Scrollbar _listScrollbar;
+    private static ModMenuNavigationPanel _listNavigationPanel;
     private static GameObject _contentRoot;
     private static RectTransform _contentViewport;
     private static ScrollRect _contentScrollRect;
     private static Scrollbar _contentScrollbar;
+    private static ModMenuNavigationPanel _contentNavigationPanel;
+    private static GameObject _vanillaMenuNavigators;
+    private static GameObject _customNavigatorsRoot;
+    private static UISpriteAnimation _leftNavigatorAnimation;
+    private static UISpriteAnimation _rightNavigatorAnimation;
+    private static ModMenuNavigatorVisuals _navigatorVisuals;
     private static Button _topBackButton;
     private static Button _topResetButton;
     private static GameObject _titleObject;
@@ -83,8 +107,12 @@ internal static class ModMenuController
     private static bool _optionsWasActive;
     private static bool _modWasActive;
     private static string _selectedEntryId;
-    private static Component _selectableUiPrototype;
-    private static Type _selectableUiType;
+    private static GameObject _lastKnownSelectedObject;
+    private static GameObject _lastMouseSelectedObject;
+    private static Vector2 _lastMousePosition;
+    private static bool _mouseInputMode;
+    private static float _nextDirectionalInputTime;
+    private static float _nextNavigationTraceTime;
 
     private sealed class ModPage
     {
@@ -103,18 +131,16 @@ internal static class ModMenuController
 
     internal static void Update()
     {
-        if (IsReady())
+        if (!IsReady())
         {
-            return;
+            if (Time.unscaledTime >= _nextScanTime)
+            {
+                _nextScanTime = Time.unscaledTime + ScanIntervalSeconds;
+                TrySetup();
+            }
         }
 
-        if (Time.unscaledTime < _nextScanTime)
-        {
-            return;
-        }
-
-        _nextScanTime = Time.unscaledTime + ScanIntervalSeconds;
-        TrySetup();
+        UpdateCustomNavigation();
     }
 
     private static bool IsReady()
@@ -226,11 +252,16 @@ internal static class ModMenuController
             return;
         }
 
+        _mouseInputMode = false;
+        _nextDirectionalInputTime = 0f;
+        _lastMousePosition = Input.mousePosition;
+        SetNavigatorVisibility(modMenuVisible: true);
         _menuRoot.transform.SetAsLastSibling();
         SetMenuVisible(true);
         CacheMenuButtonState();
         ApplyMenuButtonVisibility(false);
         ShowModList();
+        SelectInitialNavigationTarget();
     }
 
     private static void CloseMenu()
@@ -244,6 +275,10 @@ internal static class ModMenuController
         SetTopButtonsVisible(false, false);
         SetScrollbarsVisible(false, false);
         ApplyMenuButtonVisibility(true);
+        SetNavigatorVisibility(modMenuVisible: false);
+        _mouseInputMode = false;
+        _nextDirectionalInputTime = 0f;
+        _lastMousePosition = Input.mousePosition;
     }
 
     private static void SetMenuVisible(bool visible)
@@ -251,6 +286,1387 @@ internal static class ModMenuController
         _menuGroup.alpha = visible ? 1f : 0f;
         _menuGroup.interactable = visible;
         _menuGroup.blocksRaycasts = visible;
+    }
+
+    private static void SetNavigatorVisibility(bool modMenuVisible)
+    {
+        SetVanillaMenuNavigatorsActive(!modMenuVisible);
+        if (_panelRoot == null)
+        {
+            return;
+        }
+
+        EnsureCustomNavigators();
+        if (_customNavigatorsRoot == null)
+        {
+            return;
+        }
+
+        _customNavigatorsRoot.SetActive(modMenuVisible);
+        _navigatorVisuals?.SetVisible(false);
+    }
+
+    private static void SetVanillaMenuNavigatorsActive(bool active)
+    {
+        if (_vanillaMenuNavigators == null)
+        {
+            _vanillaMenuNavigators = FindSceneObjectByName(VanillaMenuNavigatorsName);
+        }
+
+        if (_vanillaMenuNavigators == null)
+        {
+            return;
+        }
+
+        _vanillaMenuNavigators.SetActive(active);
+    }
+
+    private static GameObject FindSceneObjectByName(string objectName)
+    {
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            return null;
+        }
+
+        var activeObject = GameObject.Find(objectName);
+        if (activeObject != null)
+        {
+            return activeObject;
+        }
+
+        foreach (var transform in Resources.FindObjectsOfTypeAll<Transform>())
+        {
+            if (transform == null || transform.gameObject == null)
+            {
+                continue;
+            }
+
+            if (!string.Equals(transform.name, objectName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!IsSceneObject(transform))
+            {
+                continue;
+            }
+
+            return transform.gameObject;
+        }
+
+        return null;
+    }
+
+    private static void EnsureCustomNavigators()
+    {
+        if (_panelRoot == null)
+        {
+            return;
+        }
+
+        if (_customNavigatorsRoot == null)
+        {
+            var existingNavigators = _panelRoot.transform.Find(CustomNavigatorsRootName);
+            if (existingNavigators != null)
+            {
+                _customNavigatorsRoot = existingNavigators.gameObject;
+            }
+        }
+
+        if (_customNavigatorsRoot == null)
+        {
+            var navigatorsRect = ModMenuObjectFactory.CreateRect(CustomNavigatorsRootName, _panelRoot.transform);
+            _customNavigatorsRoot = navigatorsRect.gameObject;
+            navigatorsRect.anchorMin = Vector2.zero;
+            navigatorsRect.anchorMax = Vector2.one;
+            navigatorsRect.offsetMin = Vector2.zero;
+            navigatorsRect.offsetMax = Vector2.zero;
+            _customNavigatorsRoot.SetActive(false);
+        }
+
+        var rootRect = _customNavigatorsRoot.GetComponent<RectTransform>() ??
+                       ModMenuObjectFactory.GetOrAddComponent<RectTransform>(_customNavigatorsRoot);
+        if (rootRect != null)
+        {
+            rootRect.anchorMin = Vector2.zero;
+            rootRect.anchorMax = Vector2.one;
+            rootRect.offsetMin = Vector2.zero;
+            rootRect.offsetMax = Vector2.zero;
+        }
+
+        _leftNavigatorAnimation = CreateNavigatorArrow(_customNavigatorsRoot.transform, LeftNavigatorName,
+            isRightArrow: false);
+        _rightNavigatorAnimation = CreateNavigatorArrow(_customNavigatorsRoot.transform, RightNavigatorName,
+            isRightArrow: true);
+        _navigatorVisuals = _customNavigatorsRoot.GetComponent<ModMenuNavigatorVisuals>() ??
+                            ModMenuObjectFactory.GetOrAddComponent<ModMenuNavigatorVisuals>(_customNavigatorsRoot);
+        _navigatorVisuals.Configure(_panelRoot.GetComponent<RectTransform>(), _leftNavigatorAnimation,
+            _rightNavigatorAnimation, NavigatorArrowSize, NavigatorArrowObjectGap);
+    }
+
+    private static UISpriteAnimation CreateNavigatorArrow(Transform parent, string objectName, bool isRightArrow)
+    {
+        if (parent == null || string.IsNullOrWhiteSpace(objectName))
+        {
+            return null;
+        }
+
+        var arrowTransform = parent.Find(objectName);
+        var arrowObject = arrowTransform != null
+            ? arrowTransform.gameObject
+            : ModMenuObjectFactory.CreateRect(objectName, parent).gameObject;
+        var arrowRect = arrowObject.GetComponent<RectTransform>() ??
+                        ModMenuObjectFactory.GetOrAddComponent<RectTransform>(arrowObject);
+        if (arrowRect == null)
+        {
+            return null;
+        }
+
+        arrowRect.anchorMin = new Vector2(isRightArrow ? 1f : 0f, 0.5f);
+        arrowRect.anchorMax = new Vector2(isRightArrow ? 1f : 0f, 0.5f);
+        arrowRect.pivot = new Vector2(0.5f, 0.5f);
+        arrowRect.anchoredPosition = new Vector2(isRightArrow ? -NavigatorArrowSidePadding : NavigatorArrowSidePadding, 0f);
+        arrowRect.sizeDelta = new Vector2(NavigatorArrowSize, NavigatorArrowSize);
+        arrowRect.localScale = isRightArrow ? new Vector3(-1f, 1f, 1f) : Vector3.one;
+        arrowRect.localRotation = Quaternion.identity;
+
+        var image = arrowObject.GetComponent<Image>() ?? ModMenuObjectFactory.GetOrAddComponent<Image>(arrowObject);
+        if (image == null)
+        {
+            return null;
+        }
+
+        image.enabled = false;
+        image.raycastTarget = false;
+        image.color = Color.white;
+        image.type = Image.Type.Simple;
+        image.preserveAspect = true;
+
+        var animation = arrowObject.GetComponent<UISpriteAnimation>() ??
+                        ModMenuObjectFactory.GetOrAddComponent<UISpriteAnimation>(arrowObject);
+        if (animation == null)
+        {
+            return null;
+        }
+
+        ConfigureNavigatorAnimationFrames(animation);
+        return animation;
+    }
+
+    private static void ConfigureNavigatorAnimationFrames(UISpriteAnimation animation)
+    {
+        if (animation == null)
+        {
+            return;
+        }
+
+        animation.Clean();
+        for (var index = 1; index <= 8; index++)
+        {
+            var sprite = SpriteManager.GetSprite($"arrow_0{index}");
+            if (sprite == null)
+            {
+                continue;
+            }
+
+            animation.sprites.Add(sprite);
+        }
+
+        if (animation.sprites.Count <= 0)
+        {
+            return;
+        }
+
+        animation.SetFPS(NavigatorArrowAnimationFps);
+        animation.RecalculateTriggerTime();
+        animation.Play(hideWhenDone: false);
+    }
+
+    private static void UpdateCustomNavigation()
+    {
+        if (!IsMenuOpen())
+        {
+            return;
+        }
+
+        RefreshNavigationTargets();
+        if (NavigationTargets.Count <= 0)
+        {
+            _navigatorVisuals?.SetVisible(false);
+            return;
+        }
+
+        if (TryFindTargetByGameObject(GetCurrentSelectedObject(), out var selectedBySystem))
+        {
+            _lastKnownSelectedObject = selectedBySystem.SelectionObject;
+            if (_mouseInputMode)
+            {
+                _lastMouseSelectedObject = selectedBySystem.SelectionObject;
+            }
+        }
+
+        if (WasMouseUsedThisFrame())
+        {
+            _mouseInputMode = true;
+            if (TryFindTargetByGameObject(GetCurrentSelectedObject(), out var pointerTarget))
+            {
+                _lastMouseSelectedObject = pointerTarget.SelectionObject;
+                _lastKnownSelectedObject = pointerTarget.SelectionObject;
+            }
+
+            _navigatorVisuals?.SetVisible(false);
+            return;
+        }
+
+        if (TryGetDirectionalInput(out var direction))
+        {
+            _mouseInputMode = false;
+
+            var currentTarget = ResolveCurrentNavigationTarget() ?? ResolveFallbackNavigationTarget();
+            if (currentTarget == null)
+            {
+                _navigatorVisuals?.SetVisible(false);
+                return;
+            }
+
+            if (TryHandleSliderDirectionalInput(currentTarget, direction))
+            {
+                ApplyNavigationSelection(currentTarget, ensureVisible: true);
+                UpdateNavigatorForTarget(currentTarget);
+                return;
+            }
+
+            var nextTarget = FindDirectionalTarget(currentTarget, direction) ?? currentTarget;
+            ApplyNavigationSelection(nextTarget, ensureVisible: true);
+            UpdateNavigatorForTarget(nextTarget);
+            return;
+        }
+
+        if (_mouseInputMode)
+        {
+            return;
+        }
+
+        var selectedTarget = ResolveCurrentNavigationTarget() ?? ResolveFallbackNavigationTarget();
+        if (selectedTarget == null)
+        {
+            _navigatorVisuals?.SetVisible(false);
+            return;
+        }
+
+        var ensureVisible = GetCurrentSelectedObject() != selectedTarget.SelectionObject;
+        ApplyNavigationSelection(selectedTarget, ensureVisible);
+        UpdateNavigatorForTarget(selectedTarget);
+    }
+
+    private static bool IsMenuOpen()
+    {
+        if (_menuGroup == null)
+        {
+            return false;
+        }
+
+        if (!_menuGroup.interactable || !_menuGroup.blocksRaycasts)
+        {
+            return false;
+        }
+
+        return _menuGroup.alpha > 0.99f;
+    }
+
+    private static void SelectInitialNavigationTarget()
+    {
+        _mouseInputMode = false;
+        RefreshNavigationTargets();
+
+        var initialTarget = FindInitialNavigationTarget();
+        if (initialTarget == null)
+        {
+            _navigatorVisuals?.SetVisible(false);
+            return;
+        }
+
+        ApplyNavigationSelection(initialTarget, ensureVisible: true);
+        UpdateNavigatorForTarget(initialTarget);
+    }
+
+    private static void RefreshNavigationTargets()
+    {
+        NavigationTargets.Clear();
+        EnsureNavigationPanels();
+        AddTopButtonNavigationTargets();
+        AddTabButtonNavigationTargets();
+        AddOptionNavigationTargets();
+    }
+
+    private static void EnsureNavigationPanels()
+    {
+        _listNavigationPanel = ConfigureNavigationPanel(_listViewRoot, _listScrollRect);
+        _contentNavigationPanel = ConfigureNavigationPanel(_contentRoot, _contentScrollRect);
+    }
+
+    private static ModMenuNavigationPanel ConfigureNavigationPanel(GameObject panelRoot, ScrollRect scrollRect)
+    {
+        if (panelRoot == null || scrollRect == null)
+        {
+            return null;
+        }
+
+        var panel = panelRoot.GetComponent<ModMenuNavigationPanel>() ??
+                    ModMenuObjectFactory.GetOrAddComponent<ModMenuNavigationPanel>(panelRoot);
+        panel.Configure(scrollRect);
+        return panel;
+    }
+
+    private static void AddTopButtonNavigationTargets()
+    {
+        if (_topBackButton != null && _topBackButton.gameObject.activeInHierarchy)
+        {
+            AddNavigationTarget(_topBackButton.gameObject, _topBackButton.GetComponent<RectTransform>(), null,
+                isOptionObject: false);
+        }
+
+        if (_topResetButton == null || !_topResetButton.gameObject.activeInHierarchy)
+        {
+            return;
+        }
+
+        AddNavigationTarget(_topResetButton.gameObject, _topResetButton.GetComponent<RectTransform>(), null,
+            isOptionObject: false);
+    }
+
+    private static void AddTabButtonNavigationTargets()
+    {
+        foreach (var button in EntryButtons.Values)
+        {
+            if (button == null || !button.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            AddNavigationTarget(button.gameObject, button.GetComponent<RectTransform>(), _listNavigationPanel,
+                isOptionObject: false);
+        }
+    }
+
+    private static void AddOptionNavigationTargets()
+    {
+        if (_panelRoot == null)
+        {
+            return;
+        }
+
+        foreach (var button in _panelRoot.GetComponentsInChildren<Button>(true))
+        {
+            if (!IsOptionNavigationButton(button))
+            {
+                continue;
+            }
+
+            var ownerPanel = ResolveNavigationOwnerPanel(button.transform);
+            AddNavigationTarget(button.gameObject, button.GetComponent<RectTransform>(), ownerPanel, isOptionObject: true);
+        }
+
+        foreach (var inputField in _panelRoot.GetComponentsInChildren<TMP_InputField>(true))
+        {
+            if (!IsOptionNavigationInputField(inputField))
+            {
+                continue;
+            }
+
+            var ownerPanel = ResolveNavigationOwnerPanel(inputField.transform);
+            AddNavigationTarget(inputField.gameObject, inputField.GetComponent<RectTransform>(), ownerPanel,
+                isOptionObject: true);
+        }
+
+        foreach (var slider in _panelRoot.GetComponentsInChildren<Slider>(true))
+        {
+            if (!IsOptionNavigationSlider(slider))
+            {
+                continue;
+            }
+
+            var ownerPanel = ResolveNavigationOwnerPanel(slider.transform);
+            AddNavigationTarget(slider.gameObject, slider.handleRect, ownerPanel, isOptionObject: true);
+        }
+    }
+
+    private static bool IsOptionNavigationButton(Button button)
+    {
+        if (button == null || !button.gameObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        if (IsTopActionButton(button))
+        {
+            return false;
+        }
+
+        if (IsTabEntryButton(button))
+        {
+            return false;
+        }
+
+        return IsChildOfPanelRoot(button.transform);
+    }
+
+    private static bool IsOptionNavigationInputField(TMP_InputField inputField)
+    {
+        if (inputField == null || !inputField.gameObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        return IsChildOfPanelRoot(inputField.transform);
+    }
+
+    private static bool IsOptionNavigationSlider(Slider slider)
+    {
+        if (slider == null || slider.handleRect == null || !slider.gameObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        return IsChildOfPanelRoot(slider.transform);
+    }
+
+    private static bool IsTopActionButton(Button button)
+    {
+        if (button == null)
+        {
+            return false;
+        }
+
+        var buttonObject = button.gameObject;
+        if (_topBackButton != null && _topBackButton.gameObject == buttonObject)
+        {
+            return true;
+        }
+
+        return _topResetButton != null && _topResetButton.gameObject == buttonObject;
+    }
+
+    private static bool IsTabEntryButton(Button button)
+    {
+        if (button == null)
+        {
+            return false;
+        }
+
+        foreach (var entryButton in EntryButtons.Values)
+        {
+            if (entryButton == null)
+            {
+                continue;
+            }
+
+            if (entryButton.gameObject == button.gameObject)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsChildOfPanelRoot(Transform target)
+    {
+        if (_panelRoot == null || target == null)
+        {
+            return false;
+        }
+
+        return target.IsChildOf(_panelRoot.transform);
+    }
+
+    private static ModMenuNavigationPanel ResolveNavigationOwnerPanel(Transform targetTransform)
+    {
+        if (targetTransform == null)
+        {
+            return null;
+        }
+
+        if (_contentRoot != null && targetTransform.IsChildOf(_contentRoot.transform))
+        {
+            return _contentNavigationPanel;
+        }
+
+        if (_listViewRoot != null && targetTransform.IsChildOf(_listViewRoot.transform))
+        {
+            return _listNavigationPanel;
+        }
+
+        return null;
+    }
+
+    private static void AddNavigationTarget(GameObject selectionObject, RectTransform anchorRect,
+        ModMenuNavigationPanel ownerPanel, bool isOptionObject)
+    {
+        if (selectionObject == null || anchorRect == null || !selectionObject.activeInHierarchy)
+        {
+            return;
+        }
+
+        if (!anchorRect.gameObject.activeInHierarchy)
+        {
+            return;
+        }
+
+        var targetComponent = selectionObject.GetComponent<ModMenuSelectableNavigationTarget>() ??
+                              ModMenuObjectFactory.GetOrAddComponent<ModMenuSelectableNavigationTarget>(selectionObject);
+        if (targetComponent == null)
+        {
+            return;
+        }
+
+        targetComponent.Configure(anchorRect, ownerPanel, isOptionObject);
+        if (!targetComponent.IsValid())
+        {
+            return;
+        }
+
+        foreach (var existingTarget in NavigationTargets)
+        {
+            if (existingTarget == targetComponent)
+            {
+                return;
+            }
+        }
+
+        NavigationTargets.Add(targetComponent);
+    }
+
+    private static GameObject GetCurrentSelectedObject()
+    {
+        var eventSystem = EventSystem.current;
+        if (eventSystem == null)
+        {
+            return null;
+        }
+
+        return eventSystem.currentSelectedGameObject;
+    }
+
+    private static bool WasMouseUsedThisFrame()
+    {
+        var mousePosition = (Vector2)Input.mousePosition;
+        var mouseMoved = (mousePosition - _lastMousePosition).sqrMagnitude > MouseMoveThresholdSquared;
+        _lastMousePosition = mousePosition;
+
+        if (!Input.mousePresent)
+        {
+            return false;
+        }
+
+        if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1) || Input.GetMouseButtonDown(2))
+        {
+            return true;
+        }
+
+        if (Input.mouseScrollDelta.sqrMagnitude > 0.01f)
+        {
+            return true;
+        }
+
+        if (!mouseMoved)
+        {
+            return false;
+        }
+
+        if (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject())
+        {
+            return false;
+        }
+
+        return Input.GetMouseButton(0) || Input.GetMouseButton(1) || Input.GetMouseButton(2);
+    }
+
+    private static bool TryGetDirectionalInput(out Vector2 direction)
+    {
+        direction = Vector2.zero;
+        if (Time.unscaledTime < _nextDirectionalInputTime)
+        {
+            return false;
+        }
+
+        if (Input.GetKey(KeyCode.UpArrow))
+        {
+            direction = Vector2.up;
+        }
+        else if (Input.GetKey(KeyCode.DownArrow))
+        {
+            direction = Vector2.down;
+        }
+        else if (Input.GetKey(KeyCode.LeftArrow))
+        {
+            direction = Vector2.left;
+        }
+        else if (Input.GetKey(KeyCode.RightArrow))
+        {
+            direction = Vector2.right;
+        }
+        else
+        {
+            return false;
+        }
+
+        _nextDirectionalInputTime = Time.unscaledTime + DirectionalRepeatDelay;
+        return true;
+    }
+
+    private static ModMenuSelectableNavigationTarget ResolveCurrentNavigationTarget()
+    {
+        if (TryFindTargetByGameObject(GetCurrentSelectedObject(), out var currentTarget))
+        {
+            return currentTarget;
+        }
+
+        if (TryFindTargetBySelectionObject(_lastKnownSelectedObject, out var lastKnownTarget))
+        {
+            return lastKnownTarget;
+        }
+
+        return null;
+    }
+
+    private static ModMenuSelectableNavigationTarget ResolveFallbackNavigationTarget()
+    {
+        if (TryFindTargetBySelectionObject(_lastMouseSelectedObject, out var mouseTarget))
+        {
+            return mouseTarget;
+        }
+
+        if (TryFindTargetBySelectionObject(_lastKnownSelectedObject, out var lastKnownTarget))
+        {
+            return lastKnownTarget;
+        }
+
+        return FindInitialNavigationTarget();
+    }
+
+    private static ModMenuSelectableNavigationTarget FindInitialNavigationTarget()
+    {
+        var optionTarget = FindTopMostOptionTarget();
+        if (optionTarget != null)
+        {
+            return optionTarget;
+        }
+
+        return FindBackButtonTarget();
+    }
+
+    private static ModMenuSelectableNavigationTarget FindTopMostOptionTarget()
+    {
+        ModMenuSelectableNavigationTarget bestTarget = null;
+        var bestY = float.NegativeInfinity;
+        var bestX = float.PositiveInfinity;
+
+        foreach (var target in NavigationTargets)
+        {
+            if (!target.IsOptionObject)
+            {
+                continue;
+            }
+
+            if (!TryGetPanelLocalCenter(target.AnchorRect, out var center))
+            {
+                continue;
+            }
+
+            var isBetter = center.y > bestY + 0.01f;
+            if (!isBetter && Mathf.Abs(center.y - bestY) <= 0.01f)
+            {
+                isBetter = center.x < bestX;
+            }
+
+            if (!isBetter)
+            {
+                continue;
+            }
+
+            bestTarget = target;
+            bestY = center.y;
+            bestX = center.x;
+        }
+
+        return bestTarget;
+    }
+
+    private static ModMenuSelectableNavigationTarget FindBackButtonTarget()
+    {
+        if (TryFindTargetBySelectionObject(_topBackButton?.gameObject, out var backTarget))
+        {
+            return backTarget;
+        }
+
+        return NavigationTargets.Count > 0 ? NavigationTargets[0] : null;
+    }
+
+    private static ModMenuSelectableNavigationTarget FindDirectionalTarget(ModMenuSelectableNavigationTarget currentTarget, Vector2 direction)
+    {
+        if (currentTarget == null || !TryGetPanelLocalCenter(currentTarget.AnchorRect, out var currentCenter))
+        {
+            return null;
+        }
+
+        var normalizedDirection = direction.normalized;
+        if (IsTopActionNavigationTarget(currentTarget))
+        {
+            var topNeighbor = FindTopActionNeighborTarget(currentTarget, currentCenter, normalizedDirection);
+            if (topNeighbor != null)
+            {
+                return topNeighbor;
+            }
+
+            if (normalizedDirection.y < -0.5f)
+            {
+                var optionTarget = FindTopMostOptionTarget();
+                if (optionTarget != null)
+                {
+                    return optionTarget;
+                }
+
+                var listTopTarget = FindTopMostPanelTarget(_listNavigationPanel);
+                if (listTopTarget != null)
+                {
+                    return listTopTarget;
+                }
+            }
+        }
+
+        if (currentTarget.OwnerPanel == _contentNavigationPanel && normalizedDirection.x < -0.5f)
+        {
+            var listTarget = FindBestDirectionalTarget(currentTarget, currentCenter, normalizedDirection,
+                target => target.OwnerPanel == _listNavigationPanel);
+            if (listTarget != null)
+            {
+                return listTarget;
+            }
+        }
+
+        if (currentTarget.OwnerPanel == _listNavigationPanel && normalizedDirection.x > 0.5f)
+        {
+            var contentTarget = FindBestDirectionalTarget(currentTarget, currentCenter, normalizedDirection,
+                target => target.OwnerPanel == _contentNavigationPanel && target.IsOptionObject);
+            if (contentTarget != null)
+            {
+                return contentTarget;
+            }
+        }
+
+        if (currentTarget.OwnerPanel != null)
+        {
+            var samePanelTarget = FindBestDirectionalTarget(currentTarget, currentCenter, normalizedDirection,
+                target => target.OwnerPanel == currentTarget.OwnerPanel);
+            if (samePanelTarget != null)
+            {
+                return samePanelTarget;
+            }
+        }
+
+        if (currentTarget.OwnerPanel == _listNavigationPanel && normalizedDirection.y > 0.5f)
+        {
+            return null;
+        }
+
+        if (normalizedDirection.y > 0.5f && currentTarget.OwnerPanel == _contentNavigationPanel)
+        {
+            var topTarget = FindNearestTopActionTarget(currentCenter, requireAboveCurrent: true);
+            if (topTarget != null)
+            {
+                return topTarget;
+            }
+        }
+
+        var optionTargetPreference = FindBestDirectionalTarget(currentTarget, currentCenter, normalizedDirection,
+            target => target.IsOptionObject);
+        if (optionTargetPreference != null)
+        {
+            return optionTargetPreference;
+        }
+
+        return FindBestDirectionalTarget(currentTarget, currentCenter, normalizedDirection, filter: null);
+    }
+
+    private static bool TryHandleSliderDirectionalInput(ModMenuSelectableNavigationTarget currentTarget, Vector2 direction)
+    {
+        if (currentTarget == null || Mathf.Abs(direction.x) < 0.5f || Mathf.Abs(direction.y) > 0.5f)
+        {
+            return false;
+        }
+
+        var slider = currentTarget.SelectionObject != null ? currentTarget.SelectionObject.GetComponent<Slider>() : null;
+        if (slider == null || !slider.interactable)
+        {
+            return false;
+        }
+
+        var step = slider.wholeNumbers ? 1f : SliderDirectionalStep;
+        var delta = direction.x > 0f ? step : -step;
+        var nextValue = Mathf.Clamp(slider.value + delta, slider.minValue, slider.maxValue);
+        if (slider.wholeNumbers)
+        {
+            nextValue = Mathf.Round(nextValue);
+        }
+
+        if (Mathf.Abs(nextValue - slider.value) <= 0.0001f)
+        {
+            return true;
+        }
+
+        slider.value = nextValue;
+        return true;
+    }
+
+    private static ModMenuSelectableNavigationTarget FindTopActionNeighborTarget(
+        ModMenuSelectableNavigationTarget currentTarget, Vector2 currentCenter, Vector2 direction)
+    {
+        if (Mathf.Abs(direction.x) < 0.5f)
+        {
+            return null;
+        }
+
+        var moveRight = direction.x > 0f;
+        ModMenuSelectableNavigationTarget bestTarget = null;
+        var bestDistance = float.MaxValue;
+
+        foreach (var target in NavigationTargets)
+        {
+            if (target == null || ReferenceEquals(target, currentTarget) || !IsTopActionNavigationTarget(target))
+            {
+                continue;
+            }
+
+            if (!TryGetPanelLocalCenter(target.AnchorRect, out var center))
+            {
+                continue;
+            }
+
+            var deltaX = center.x - currentCenter.x;
+            if ((moveRight && deltaX <= 0.01f) || (!moveRight && deltaX >= -0.01f))
+            {
+                continue;
+            }
+
+            var distance = Mathf.Abs(deltaX);
+            if (distance >= bestDistance)
+            {
+                continue;
+            }
+
+            bestTarget = target;
+            bestDistance = distance;
+        }
+
+        return bestTarget;
+    }
+
+    private static ModMenuSelectableNavigationTarget FindNearestTopActionTarget(Vector2 currentCenter, bool requireAboveCurrent)
+    {
+        ModMenuSelectableNavigationTarget bestTarget = null;
+        var bestScore = float.MaxValue;
+
+        foreach (var target in NavigationTargets)
+        {
+            if (!IsTopActionNavigationTarget(target) || !TryGetPanelLocalCenter(target.AnchorRect, out var center))
+            {
+                continue;
+            }
+
+            if (requireAboveCurrent && center.y < currentCenter.y - 0.01f)
+            {
+                continue;
+            }
+
+            var score = (Mathf.Abs(center.x - currentCenter.x) * 6f) + Mathf.Abs(center.y - currentCenter.y);
+            if (score >= bestScore)
+            {
+                continue;
+            }
+
+            bestTarget = target;
+            bestScore = score;
+        }
+
+        return bestTarget;
+    }
+
+    private static ModMenuSelectableNavigationTarget FindTopMostPanelTarget(ModMenuNavigationPanel panel)
+    {
+        if (panel == null)
+        {
+            return null;
+        }
+
+        ModMenuSelectableNavigationTarget bestTarget = null;
+        var bestY = float.NegativeInfinity;
+        var bestX = float.PositiveInfinity;
+
+        foreach (var target in NavigationTargets)
+        {
+            if (target == null || target.OwnerPanel != panel || !TryGetPanelLocalCenter(target.AnchorRect, out var center))
+            {
+                continue;
+            }
+
+            var isBetter = center.y > bestY + 0.01f;
+            if (!isBetter && Mathf.Abs(center.y - bestY) <= 0.01f)
+            {
+                isBetter = center.x < bestX;
+            }
+
+            if (!isBetter)
+            {
+                continue;
+            }
+
+            bestTarget = target;
+            bestY = center.y;
+            bestX = center.x;
+        }
+
+        return bestTarget;
+    }
+
+    private static ModMenuSelectableNavigationTarget FindBestDirectionalTarget(
+        ModMenuSelectableNavigationTarget currentTarget,
+        Vector2 currentCenter,
+        Vector2 normalizedDirection,
+        Func<ModMenuSelectableNavigationTarget, bool> filter)
+    {
+        var verticalDirection = Mathf.Abs(normalizedDirection.y) >= Mathf.Abs(normalizedDirection.x);
+        ModMenuSelectableNavigationTarget bestTarget = null;
+        var bestScore = float.MaxValue;
+
+        foreach (var target in NavigationTargets)
+        {
+            if (target == null || !target.IsValid() || ReferenceEquals(target, currentTarget))
+            {
+                continue;
+            }
+
+            if (filter != null && !filter(target))
+            {
+                continue;
+            }
+
+            if (!TryGetPanelLocalCenter(target.AnchorRect, out var targetCenter))
+            {
+                continue;
+            }
+
+            var delta = targetCenter - currentCenter;
+            if (Vector2.Dot(delta, normalizedDirection) <= 0.01f)
+            {
+                continue;
+            }
+
+            var primaryDistance = verticalDirection ? Mathf.Abs(delta.y) : Mathf.Abs(delta.x);
+            var lateralDistance = verticalDirection ? Mathf.Abs(delta.x) : Mathf.Abs(delta.y);
+            var score = (primaryDistance * 1000f) + (lateralDistance * 12f) + (delta.sqrMagnitude * 0.05f);
+            if (score >= bestScore)
+            {
+                continue;
+            }
+
+            bestTarget = target;
+            bestScore = score;
+        }
+
+        return bestTarget;
+    }
+
+    private static bool IsTopActionNavigationTarget(ModMenuSelectableNavigationTarget target)
+    {
+        if (target == null || target.SelectionObject == null)
+        {
+            return false;
+        }
+
+        var selectionObject = target.SelectionObject;
+        if (_topBackButton != null && selectionObject == _topBackButton.gameObject)
+        {
+            return true;
+        }
+
+        return _topResetButton != null && selectionObject == _topResetButton.gameObject;
+    }
+
+    private static bool TryFindTargetByGameObject(GameObject gameObject, out ModMenuSelectableNavigationTarget target)
+    {
+        if (gameObject == null)
+        {
+            target = null;
+            return false;
+        }
+
+        var directTarget = gameObject.GetComponent<ModMenuSelectableNavigationTarget>() ??
+                           gameObject.GetComponentInParent<ModMenuSelectableNavigationTarget>();
+        if (directTarget != null)
+        {
+            foreach (var navigationTarget in NavigationTargets)
+            {
+                if (navigationTarget != directTarget)
+                {
+                    continue;
+                }
+
+                target = directTarget;
+                return true;
+            }
+        }
+
+        var selectedTransform = gameObject.transform;
+        foreach (var navigationTarget in NavigationTargets)
+        {
+            if (navigationTarget == null || !navigationTarget.IsValid())
+            {
+                continue;
+            }
+
+            var selectionObject = navigationTarget.SelectionObject;
+            var anchorRect = navigationTarget.AnchorRect;
+            if (selectionObject == null || anchorRect == null)
+            {
+                continue;
+            }
+
+            if (selectionObject == gameObject || anchorRect.gameObject == gameObject)
+            {
+                target = navigationTarget;
+                return true;
+            }
+
+            var selectionTransform = selectionObject.transform;
+            var anchorTransform = anchorRect.transform;
+            if (selectedTransform.IsChildOf(selectionTransform) || selectedTransform.IsChildOf(anchorTransform))
+            {
+                target = navigationTarget;
+                return true;
+            }
+
+            if (selectionTransform.IsChildOf(selectedTransform) || anchorTransform.IsChildOf(selectedTransform))
+            {
+                target = navigationTarget;
+                return true;
+            }
+        }
+
+        target = null;
+        return false;
+    }
+
+    private static bool TryFindTargetBySelectionObject(GameObject selectionObject, out ModMenuSelectableNavigationTarget target)
+    {
+        if (selectionObject != null)
+        {
+            foreach (var navigationTarget in NavigationTargets)
+            {
+                if (navigationTarget.SelectionObject != selectionObject)
+                {
+                    continue;
+                }
+
+                target = navigationTarget;
+                return true;
+            }
+        }
+
+        target = null;
+        return false;
+    }
+
+    private static bool TryGetPanelLocalCenter(RectTransform rectTransform, out Vector2 center)
+    {
+        center = Vector2.zero;
+        if (_panelRoot == null || rectTransform == null)
+        {
+            return false;
+        }
+
+        var panelRect = _panelRoot.GetComponent<RectTransform>();
+        if (panelRect == null)
+        {
+            return false;
+        }
+
+        var worldCenter = rectTransform.TransformPoint(rectTransform.rect.center);
+        var panelLocal = panelRect.InverseTransformPoint(worldCenter);
+        center = new Vector2(panelLocal.x, panelLocal.y);
+        return true;
+    }
+
+    private static void ApplyNavigationSelection(ModMenuSelectableNavigationTarget target, bool ensureVisible)
+    {
+        if (target == null || !target.IsValid())
+        {
+            return;
+        }
+
+        if (ensureVisible)
+        {
+            EnsureTargetVisible(target);
+        }
+
+        var eventSystem = EventSystem.current;
+        var changedSelection = eventSystem == null || eventSystem.currentSelectedGameObject != target.SelectionObject;
+        if (eventSystem != null && changedSelection)
+        {
+            eventSystem.SetSelectedGameObject(target.SelectionObject);
+        }
+
+        var selectable = target.SelectionObject.GetComponent<Selectable>();
+        if (selectable != null && selectable.IsInteractable() && changedSelection)
+        {
+            selectable.Select();
+        }
+
+        if (ensureVisible)
+        {
+            EnsureTargetVisible(target);
+        }
+
+        _lastKnownSelectedObject = target.SelectionObject;
+    }
+
+    private static void EnsureTargetVisible(ModMenuSelectableNavigationTarget target)
+    {
+        if (target == null || target.AnchorRect == null)
+        {
+            return;
+        }
+
+        var scrolled = false;
+        if (target.OwnerPanel != null)
+        {
+            scrolled = target.OwnerPanel.EnsureVisible(target.AnchorRect, ScrollIntoViewPadding);
+        }
+
+        if (scrolled)
+        {
+            return;
+        }
+
+        var ownerScrollRect = ResolveOwnerScrollRect(target.AnchorRect.transform);
+        if (ownerScrollRect == null)
+        {
+            return;
+        }
+
+        EnsureVisibleInScrollRect(ownerScrollRect, target.AnchorRect, ScrollIntoViewPadding);
+    }
+
+    private static ScrollRect ResolveOwnerScrollRect(Transform targetTransform)
+    {
+        if (targetTransform == null)
+        {
+            return null;
+        }
+
+        if (_contentRoot != null && _contentScrollRect != null && targetTransform.IsChildOf(_contentRoot.transform))
+        {
+            return _contentScrollRect;
+        }
+
+        if (_listViewRoot != null && _listScrollRect != null && targetTransform.IsChildOf(_listViewRoot.transform))
+        {
+            return _listScrollRect;
+        }
+
+        return null;
+    }
+
+    private static bool EnsureVisibleInScrollRect(ScrollRect scrollRect, RectTransform targetRect, float padding)
+    {
+        if (scrollRect == null || targetRect == null)
+        {
+            return false;
+        }
+
+        var viewport = scrollRect.viewport;
+        var content = scrollRect.content;
+        if (viewport == null || content == null || !content.gameObject.activeInHierarchy ||
+            !targetRect.gameObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        LayoutRebuilder.ForceRebuildLayoutImmediate(content);
+        Canvas.ForceUpdateCanvases();
+
+        targetRect.GetWorldCorners(VisibilityCornerBuffer);
+        var targetTop = float.NegativeInfinity;
+        var targetBottom = float.PositiveInfinity;
+        for (var cornerIndex = 0; cornerIndex < VisibilityCornerBuffer.Length; cornerIndex++)
+        {
+            var localPoint = viewport.InverseTransformPoint(VisibilityCornerBuffer[cornerIndex]);
+            if (localPoint.y > targetTop)
+            {
+                targetTop = localPoint.y;
+            }
+
+            if (localPoint.y < targetBottom)
+            {
+                targetBottom = localPoint.y;
+            }
+        }
+
+        var viewportTop = viewport.rect.yMax - padding;
+        var viewportBottom = viewport.rect.yMin + padding;
+        var delta = 0f;
+        if (targetTop > viewportTop)
+        {
+            delta = targetTop - viewportTop;
+        }
+        else if (targetBottom < viewportBottom)
+        {
+            delta = targetBottom - viewportBottom;
+        }
+
+        if (Mathf.Abs(delta) <= 0.01f)
+        {
+            return false;
+        }
+
+        var maxScrollY = ResolveMaxScrollY(content, viewport);
+        if (maxScrollY <= 0.01f)
+        {
+            return false;
+        }
+
+        scrollRect.StopMovement();
+        var contentPosition = content.anchoredPosition;
+        var nextY = Mathf.Clamp(contentPosition.y - delta, 0f, maxScrollY);
+        if (Mathf.Abs(nextY - contentPosition.y) <= 0.01f)
+        {
+            return false;
+        }
+
+        contentPosition.y = nextY;
+        content.anchoredPosition = contentPosition;
+        scrollRect.velocity = Vector2.zero;
+        scrollRect.verticalNormalizedPosition = Mathf.Clamp01(1f - (nextY / maxScrollY));
+        Canvas.ForceUpdateCanvases();
+        return true;
+    }
+
+    private static float ResolveMaxScrollY(RectTransform content, RectTransform viewport)
+    {
+        if (content == null || viewport == null)
+        {
+            return 0f;
+        }
+
+        var contentHeight = content.rect.height;
+        var preferredHeight = Mathf.Max(LayoutUtility.GetPreferredHeight(content), LayoutUtility.GetMinHeight(content));
+        contentHeight = Mathf.Max(contentHeight, preferredHeight, ResolveChildBoundsHeight(content));
+        if (contentHeight > content.rect.height + 0.1f)
+        {
+            content.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, contentHeight);
+        }
+
+        return Mathf.Max(0f, contentHeight - viewport.rect.height);
+    }
+
+    private static float ResolveChildBoundsHeight(RectTransform parent)
+    {
+        if (parent == null)
+        {
+            return 0f;
+        }
+
+        var minY = float.PositiveInfinity;
+        var maxY = float.NegativeInfinity;
+        var childCount = parent.childCount;
+        for (var childIndex = 0; childIndex < childCount; childIndex++)
+        {
+            var child = parent.GetChild(childIndex).TryCast<RectTransform>();
+            if (child == null || !child.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            child.GetWorldCorners(VisibilityCornerBuffer);
+            for (var cornerIndex = 0; cornerIndex < VisibilityCornerBuffer.Length; cornerIndex++)
+            {
+                var localPoint = parent.InverseTransformPoint(VisibilityCornerBuffer[cornerIndex]);
+                if (localPoint.y < minY)
+                {
+                    minY = localPoint.y;
+                }
+
+                if (localPoint.y > maxY)
+                {
+                    maxY = localPoint.y;
+                }
+            }
+        }
+
+        if (float.IsInfinity(minY) || float.IsInfinity(maxY))
+        {
+            return 0f;
+        }
+
+        return Mathf.Max(0f, maxY - minY);
+    }
+
+    private static void UpdateNavigatorForTarget(ModMenuSelectableNavigationTarget target)
+    {
+        if (_mouseInputMode || target == null || target.AnchorRect == null || _customNavigatorsRoot == null)
+        {
+            TraceNavigation("UpdateNavigator:skip-invalid", GetCurrentSelectedObject(), target,
+                $"mouseMode={_mouseInputMode} customRoot={_customNavigatorsRoot != null}");
+            _navigatorVisuals?.SetVisible(false);
+            return;
+        }
+
+        if (!_customNavigatorsRoot.activeInHierarchy)
+        {
+            TraceNavigation("UpdateNavigator:skip-root-inactive", GetCurrentSelectedObject(), target,
+                $"targetCount={NavigationTargets.Count}");
+            _navigatorVisuals?.SetVisible(false);
+            return;
+        }
+
+        TraceNavigation("UpdateNavigator:apply", GetCurrentSelectedObject(), target, $"targetCount={NavigationTargets.Count}");
+        _navigatorVisuals?.UpdateForTarget(target.AnchorRect);
+    }
+
+    private static void TraceNavigation(string eventName, GameObject selectedObject, ModMenuSelectableNavigationTarget target,
+        string detail)
+    {
+#if DEBUG
+        if (Time.unscaledTime < _nextNavigationTraceTime)
+        {
+            return;
+        }
+
+        var selectedPath = BuildObjectPath(selectedObject != null ? selectedObject.transform : null);
+        var targetSelectionPath = BuildObjectPath(target != null && target.SelectionObject != null ? target.SelectionObject.transform : null);
+        var targetAnchorPath = BuildObjectPath(target != null && target.AnchorRect != null ? target.AnchorRect.transform : null);
+        var message = $"[SurvivorModMenu][NavTrace] {eventName} | selected={selectedPath} | target={targetSelectionPath} | anchor={targetAnchorPath} | {detail}";
+        _nextNavigationTraceTime = Time.unscaledTime + NavigationTraceThrottleSeconds;
+        MelonLogger.Msg(message);
+#endif
+    }
+
+    private static string BuildObjectPath(Transform transform)
+    {
+        if (transform == null)
+        {
+            return "<null>";
+        }
+
+        var names = new List<string>(8);
+        while (transform != null)
+        {
+            names.Add(transform.name);
+            transform = transform.parent;
+        }
+
+        names.Reverse();
+        return string.Join("/", names);
     }
 
     private static void BuildMenu(Canvas canvas)
@@ -294,6 +1710,7 @@ internal static class ModMenuController
         ApplyPanelStyle(panelImage);
         _panelRoot = panel;
         var tabPanelWidth = ResolveTabPanelWidth(panelWidth);
+        EnsureCustomNavigators();
 
         var title = CreateTextObject(panel.transform, "MOD OPTIONS", _textStyle, _textStyle.fontSize + 10f,
             TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
@@ -868,6 +2285,10 @@ internal static class ModMenuController
             return;
         }
 
+        var customNavigators = _panelRoot.transform.Find(CustomNavigatorsRootName);
+        _customNavigatorsRoot = customNavigators != null ? customNavigators.gameObject : _customNavigatorsRoot;
+        EnsureCustomNavigators();
+
         var tabPanel = _panelRoot.transform.Find("TabPanel");
         _tabPanelRoot = tabPanel != null ? tabPanel.gameObject : _tabPanelRoot;
 
@@ -1114,6 +2535,7 @@ internal static class ModMenuController
     private static void ResetUiState()
     {
         // Clear all static state so menu UI is rebuilt cleanly after a reset.
+        SetVanillaMenuNavigatorsActive(active: true);
         DestroyUiObjects();
         _modButton = null;
         _optionsAnchorButton = null;
@@ -1125,10 +2547,17 @@ internal static class ModMenuController
         _listRoot = null;
         _listScrollRect = null;
         _listScrollbar = null;
+        _listNavigationPanel = null;
         _contentRoot = null;
         _contentViewport = null;
         _contentScrollRect = null;
         _contentScrollbar = null;
+        _contentNavigationPanel = null;
+        _vanillaMenuNavigators = null;
+        _customNavigatorsRoot = null;
+        _leftNavigatorAnimation = null;
+        _rightNavigatorAnimation = null;
+        _navigatorVisuals = null;
         _topBackButton = null;
         _topResetButton = null;
         _titleObject = null;
@@ -1137,12 +2566,16 @@ internal static class ModMenuController
         _optionsWasActive = false;
         _modWasActive = false;
         _selectedEntryId = null;
-        _selectableUiPrototype = null;
-        _selectableUiType = null;
+        _lastKnownSelectedObject = null;
+        _lastMouseSelectedObject = null;
+        _lastMousePosition = Vector2.zero;
+        _mouseInputMode = false;
+        _nextDirectionalInputTime = 0f;
         _nextScanTime = 0f;
         Pages.Clear();
         EntryButtons.Clear();
         LabelBaseY.Clear();
+        NavigationTargets.Clear();
     }
 
     private static void DestroyUiObjects()
@@ -1308,91 +2741,6 @@ internal static class ModMenuController
         layoutElement.ignoreLayout = true;
     }
 
-    internal static void ApplySelectableUiTemplate(GameObject target)
-    {
-        if (target == null)
-        {
-            return;
-        }
-
-        if (!TryGetSelectableUiPrototype(out var prototype, out var componentType))
-        {
-            return;
-        }
-
-        if (HasComponentOfType(target, componentType))
-        {
-            return;
-        }
-
-        Component clonedComponent;
-        try
-        {
-            clonedComponent = AddComponentByManagedType(target, componentType);
-        }
-        catch (Exception)
-        {
-            return;
-        }
-
-        if (clonedComponent == null)
-        {
-            return;
-        }
-
-        CopySelectableUiValues(prototype, clonedComponent);
-    }
-
-    private static bool HasComponentOfType(GameObject target, Type componentType)
-    {
-        if (target == null || componentType == null)
-        {
-            return false;
-        }
-
-        foreach (var component in target.GetComponents<Component>())
-        {
-            if (component == null)
-            {
-                continue;
-            }
-
-            var type = component.GetType();
-            if (type == componentType)
-            {
-                return true;
-            }
-
-            if (type.FullName == componentType.FullName)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static Component AddComponentByManagedType(GameObject target, Type componentType)
-    {
-        if (target == null || componentType == null)
-        {
-            return null;
-        }
-
-        var addComponentDefinition = typeof(GameObject).GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .FirstOrDefault(method => method.Name == nameof(GameObject.AddComponent) &&
-                                      method.IsGenericMethodDefinition &&
-                                      method.GetGenericArguments().Length == 1 &&
-                                      method.GetParameters().Length == 0);
-        if (addComponentDefinition == null)
-        {
-            return null;
-        }
-
-        var addComponent = addComponentDefinition.MakeGenericMethod(componentType);
-        return addComponent.Invoke(target, null) as Component;
-    }
-
     private static void StretchToParent(RectTransform rect)
     {
         if (rect == null)
@@ -1439,7 +2787,28 @@ internal static class ModMenuController
             return;
         }
 
-        foreach (var component in target.GetComponents<Component>())
+        foreach (var optionsButton in target.GetComponentsInChildren<OptionsButton>(true))
+        {
+            if (optionsButton == null)
+            {
+                continue;
+            }
+
+            DestroyComponentNow(optionsButton);
+        }
+
+        RemoveComponentsByTypeName(target, OptionsButtonTypeName);
+        RemoveComponentsByTypeName(target, SelectableUiTypeName);
+    }
+
+    private static void RemoveComponentsByTypeName(GameObject target, string typeName)
+    {
+        if (target == null || string.IsNullOrWhiteSpace(typeName))
+        {
+            return;
+        }
+
+        foreach (var component in target.GetComponentsInChildren<Component>(true))
         {
             if (component == null)
             {
@@ -1447,145 +2816,33 @@ internal static class ModMenuController
             }
 
             var type = component.GetType();
-            var matchesName = string.Equals(type.Name, OptionsButtonComponentName, StringComparison.Ordinal);
-            var matchesFullName = string.Equals(type.FullName, OptionsButtonComponentFullName, StringComparison.Ordinal);
-            if (!matchesName && !matchesFullName)
+            if (type == null || !string.Equals(type.FullName, typeName, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            UnityEngine.Object.Destroy(component);
+            DestroyComponentNow(component);
         }
     }
 
-    private static bool TryGetSelectableUiPrototype(out Component prototype, out Type componentType)
+    private static void DestroyComponentNow(Component component)
     {
-        prototype = _selectableUiPrototype;
-        componentType = _selectableUiType;
-        if (prototype != null && componentType != null)
-        {
-            return true;
-        }
-
-        if (_modButton == null)
-        {
-            var existingButton = GameObject.Find(ModButtonName);
-            if (existingButton != null)
-            {
-                _modButton = existingButton.GetComponent<Button>();
-            }
-        }
-
-        if (_modButton == null)
-        {
-            return false;
-        }
-
-        prototype = FindSelectableUiComponent(_modButton.gameObject);
-        if (prototype == null)
-        {
-            return false;
-        }
-
-        componentType = prototype.GetType();
-        _selectableUiPrototype = prototype;
-        _selectableUiType = componentType;
-        return true;
-    }
-
-    private static Component FindSelectableUiComponent(GameObject root)
-    {
-        if (root == null)
-        {
-            return null;
-        }
-
-        foreach (var component in root.GetComponents<Component>())
-        {
-            if (component == null || !IsSelectableUiType(component.GetType()))
-            {
-                continue;
-            }
-
-            return component;
-        }
-
-        return null;
-    }
-
-    private static bool IsSelectableUiType(Type type)
-    {
-        if (type == null)
-        {
-            return false;
-        }
-
-        return string.Equals(type.FullName, SelectableUiComponentFullName, StringComparison.Ordinal);
-    }
-
-    private static void CopySelectableUiValues(Component source, Component target)
-    {
-        if (source == null || target == null)
+        if (component == null)
         {
             return;
         }
 
-        var sourceType = source.GetType();
-        var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-
-        foreach (var field in sourceType.GetFields(flags))
+        try
         {
-            if (field.IsInitOnly || field.IsLiteral || !CanCopyMemberType(field.FieldType))
-            {
-                continue;
-            }
-
-            try
-            {
-                field.SetValue(target, field.GetValue(source));
-            }
-            catch (Exception)
-            {
-                // ignored
-            }
+            UnityEngine.Object.DestroyImmediate(component);
+            return;
+        }
+        catch (Exception)
+        {
+            // ignored
         }
 
-        foreach (var property in sourceType.GetProperties(flags))
-        {
-            if (!property.CanRead || !property.CanWrite || property.GetIndexParameters().Length > 0)
-            {
-                continue;
-            }
-
-            if (!CanCopyMemberType(property.PropertyType))
-            {
-                continue;
-            }
-
-            try
-            {
-                property.SetValue(target, property.GetValue(source, null), null);
-            }
-            catch (Exception)
-            {
-                // ignored
-            }
-        }
-    }
-
-    private static bool CanCopyMemberType(Type type)
-    {
-        if (type == null)
-        {
-            return false;
-        }
-
-        if (type.IsPrimitive || type.IsEnum || type.IsValueType)
-        {
-            return true;
-        }
-
-        return type == typeof(string);
+        UnityEngine.Object.Destroy(component);
     }
 
     private static Button CloneButtonFromTemplate(Button templateButton, Transform parent, string name)

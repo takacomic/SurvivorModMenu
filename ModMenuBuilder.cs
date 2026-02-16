@@ -826,7 +826,6 @@ public sealed class ModMenuBuilder
             return null;
         }
 
-        ApplySelectableUiTemplate(input.gameObject);
         ConfigureControlRect(input.GetComponent<RectTransform>(), 0.58f, 1f, ControlHeight);
         input.contentType = contentType;
         input.characterLimit = Mathf.Max(characterLimit, 0);
@@ -885,7 +884,6 @@ public sealed class ModMenuBuilder
     private static Slider CreateSlider(Transform parent, string name)
     {
         var slider = ModMenuObjectFactory.CreateSlider(name, parent, out var sliderRect, out var background);
-        ApplySelectableUiTemplate(slider.gameObject);
         background.color = Color.clear;
         background.raycastTarget = true;
 
@@ -906,7 +904,6 @@ public sealed class ModMenuBuilder
         StretchToParent(handleAreaRect);
 
         var handleImage = ModMenuObjectFactory.CreateImage("Handle", handleAreaRect, out var handleRect);
-        ApplySelectableUiTemplate(handleImage.gameObject);
         handleRect.anchorMin = new Vector2(0.5f, 0.5f);
         handleRect.anchorMax = new Vector2(0.5f, 0.5f);
         handleRect.pivot = new Vector2(0.5f, 0.5f);
@@ -924,7 +921,6 @@ public sealed class ModMenuBuilder
         Color pressed, Color disabled)
     {
         var button = ModMenuObjectFactory.CreateButton(name, parent, out _, out var image);
-        ApplySelectableUiTemplate(button.gameObject);
         ApplyRoundedImage(image);
 
         button.targetGraphic = image;
@@ -934,11 +930,6 @@ public sealed class ModMenuBuilder
         SetButtonLabel(button, text, _textStyle);
 
         return button;
-    }
-
-    private static void ApplySelectableUiTemplate(GameObject target)
-    {
-        ModMenuController.ApplySelectableUiTemplate(target);
     }
 
     private void CreateRowLabel(RectTransform row, string label)
