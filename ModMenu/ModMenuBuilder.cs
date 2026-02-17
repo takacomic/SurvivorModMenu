@@ -35,25 +35,29 @@ public sealed class ModMenuBuilder
     private const float ActionButtonHeight = ControlHeight * 2f;
     private const float ActionButtonRowPadding = 12f;
     private const string SliderHandleSpriteName = "menu_square_flat_24";
+    private const string DropdownArrowSpriteName = "arrowNeutral_01";
     private const string InputFrameSpriteName = "frame5_c4";
     private const string ActionButtonSpriteName = "button_c9_mouseover";
     private const string PanelFrameSpriteName = "frame5_c4";
     private const string CustomLabelName = "SurvivorModMenu_Label";
     private const string ToggleTickName = "SurvivorModMenu_ToggleTick";
+    private const string DropdownTriggerArrowName = "SurvivorModMenu_DropdownTriggerArrow";
+    private const string DropdownSelectedArrowName = "SurvivorModMenu_DropdownSelectedArrow";
 
-    private static readonly Color Gray = new(0.34f, 0.36f, 0.40f, 1f);
-    private static readonly Color LightGray = new(0.57f, 0.60f, 0.66f, 1f);
-    private static readonly Color Blue = new(0.27f, 0.47f, 0.78f, 1f);
-    private static readonly Color Green = new(0.24f, 0.68f, 0.38f, 1f);
-    private static readonly Color Red = new(0.74f, 0.24f, 0.25f, 1f);
-    private static readonly Color Dark = new(0.16f, 0.18f, 0.22f, 1f);
-    private static readonly Color SliderTrackDarkGray = new(0.23f, 0.23f, 0.23f, 0.9f);
+    private static readonly Color _gray = new(0.34f, 0.36f, 0.40f, 1f);
+    private static readonly Color _lightGray = new(0.57f, 0.60f, 0.66f, 1f);
+    private static readonly Color _blue = new(0.27f, 0.47f, 0.78f, 1f);
+    private static readonly Color _green = new(0.24f, 0.68f, 0.38f, 1f);
+    private static readonly Color _red = new(0.74f, 0.24f, 0.25f, 1f);
+    private static readonly Color _dark = new(0.16f, 0.18f, 0.22f, 1f);
+    private static readonly Color _sliderTrackDarkGray = new(0.23f, 0.23f, 0.23f, 0.9f);
 
     private static Sprite _roundedSprite;
     private static Sprite _toggleBackgroundSprite;
     private static Sprite _toggleOnSprite;
     private static Sprite _toggleOffSprite;
     private static Sprite _sliderHandleSprite;
+    private static Sprite _dropdownArrowSprite;
     private static Sprite _inputFrameSprite;
     private static Sprite _actionButtonSprite;
     private static Sprite _panelFrameSprite;
@@ -73,7 +77,7 @@ public sealed class ModMenuBuilder
     /// <summary>
     /// Root container used for rows created by this builder.
     /// </summary>
-    public RectTransform ContentRoot { get; }
+    private RectTransform ContentRoot { get; }
 
     /// <summary>
     /// Adds a non-interactive text label row.
@@ -84,7 +88,7 @@ public sealed class ModMenuBuilder
     public GameObject AddLabel(string text, float fontSizeDelta = 0f)
     {
         var row = CreateRow($"Label_{text}", DefaultRowHeight);
-        var labelObject = CreateTextObject(row, text, _textStyle, _textStyle.fontSize + fontSizeDelta,
+        var labelObject = CreateTextObject(row, text, _textStyle, _textStyle.FontSize + fontSizeDelta,
             TextAnchor.MiddleLeft, TextAlignmentOptions.Left);
         StretchToParent(labelObject.GetComponent<RectTransform>());
         return labelObject;
@@ -100,7 +104,7 @@ public sealed class ModMenuBuilder
     {
         var rowHeight = Mathf.Max(DefaultRowHeight + 4f, ActionButtonHeight + ActionButtonRowPadding);
         var row = CreateRow($"Button_{label}", rowHeight);
-        var button = CreateButton(row, "RowButton", label, Gray, LightGray, Blue, Dark);
+        var button = CreateButton(row, "RowButton", label, _gray, _lightGray, _blue, _dark);
         if (button == null)
         {
             return null;
@@ -126,7 +130,7 @@ public sealed class ModMenuBuilder
         var row = CreateRow($"Toggle_{label}", rowHeight);
         CreateRowLabel(row, label);
 
-        var toggleButton = CreateButton(row, "ToggleButton", string.Empty, Red, LightGray, Blue, Dark);
+        var toggleButton = CreateButton(row, "ToggleButton", string.Empty, _red, _lightGray, _blue, _dark);
         if (toggleButton == null)
         {
             return null;
@@ -536,13 +540,18 @@ public sealed class ModMenuBuilder
         const float overlayScrollbarPadding = 6f;
         const float closeButtonBottom = 24f;
         const float closeButtonWidth = 240f;
+        const float triggerArrowRightPadding = 24f;
+        const float selectedArrowRightPadding = 24f;
+        const float dropdownArrowRotationZ = -90f;
+        const float selectedArrowRotationZ = 180f;
+        const float dropdownLabelRightInset = 40f;
 
         var optionCount = options?.Count ?? 0;
         var rowHeight = Mathf.Max(DefaultRowHeight, ActionButtonHeight + ActionButtonRowPadding);
         var row = CreateRow($"Dropdown_{label}", rowHeight);
         CreateRowLabel(row, label);
 
-        var dropdownButton = CreateButton(row, "DropdownButton", string.Empty, Gray, LightGray, Blue, Dark);
+        var dropdownButton = CreateButton(row, "DropdownButton", string.Empty, _gray, _lightGray, _blue, _dark);
         if (dropdownButton == null)
         {
             return null;
@@ -550,11 +559,16 @@ public sealed class ModMenuBuilder
 
         ConfigureControlRect(dropdownButton.GetComponent<RectTransform>(), 0.58f, 1f, ActionButtonHeight);
         ApplyActionButtonSprite(dropdownButton);
+        var triggerArrow = ConfigureDropdownArrowIndicator(dropdownButton.transform, DropdownTriggerArrowName,
+            triggerArrowRightPadding, dropdownArrowRotationZ);
 
         if (optionCount <= 0)
         {
             SetButtonLabel(dropdownButton, "(none)", _textStyle);
+            ConfigureButtonLabelInsets(dropdownButton, dropdownLabelRightInset);
             dropdownButton.interactable = false;
+            triggerArrow?.gameObject.SetActive(false);
+
             return dropdownButton;
         }
 
@@ -641,10 +655,11 @@ public sealed class ModMenuBuilder
         listScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
 
         var optionButtons = new List<Button>(Mathf.Max(1, optionCount));
+        var optionIndicators = new List<Image>(Mathf.Max(1, optionCount));
         for (var i = 0; i < optionCount; i++)
         {
             var option = options?[i] ?? string.Empty;
-            var optionButton = CreateButton(contentRect, $"Option_{i}", option, Gray, LightGray, Blue, Dark);
+            var optionButton = CreateButton(contentRect, $"Option_{i}", option, _gray, _lightGray, _blue, _dark);
             if (optionButton == null)
             {
                 continue;
@@ -667,6 +682,11 @@ public sealed class ModMenuBuilder
             optionLayout.minHeight = ActionButtonHeight;
 
             ApplyActionButtonSprite(optionButton);
+            var selectedIndicator = ConfigureDropdownArrowIndicator(optionButton.transform, DropdownSelectedArrowName,
+                selectedArrowRightPadding, selectedArrowRotationZ);
+            selectedIndicator?.gameObject.SetActive(false);
+
+            ConfigureButtonLabelInsets(optionButton, dropdownLabelRightInset);
 
             var optionIndex = i;
             AddButtonClick(optionButton, () =>
@@ -678,9 +698,10 @@ public sealed class ModMenuBuilder
             });
 
             optionButtons.Add(optionButton);
+            optionIndicators.Add(selectedIndicator);
         }
 
-        var closeButton = CreateButton(overlayPanelRect, "DropdownCloseButton", "CLOSE", Gray, LightGray, Blue, Dark);
+        var closeButton = CreateButton(overlayPanelRect, "DropdownCloseButton", "CLOSE", _gray, _lightGray, _blue, _dark);
         if (closeButton != null)
         {
             var closeRect = closeButton.GetComponent<RectTransform>();
@@ -730,7 +751,9 @@ public sealed class ModMenuBuilder
         {
             var normalized = NormalizeIndex(currentIndex);
             var optionText = options?[normalized] ?? string.Empty;
-            SetButtonLabel(dropdownButton, $"{optionText} v", _textStyle);
+            SetButtonLabel(dropdownButton, optionText, _textStyle);
+            ConfigureButtonLabelInsets(dropdownButton, dropdownLabelRightInset);
+            triggerArrow?.gameObject.SetActive(true);
 
             for (var i = 0; i < optionButtons.Count; i++)
             {
@@ -742,8 +765,20 @@ public sealed class ModMenuBuilder
 
                 var optionTextValue = options?[i] ?? string.Empty;
                 var selected = i == normalized;
-                var decoratedText = selected ? $"{optionTextValue} <" : optionTextValue;
-                SetButtonLabel(button, decoratedText, _textStyle);
+                SetButtonLabel(button, optionTextValue, _textStyle);
+                ConfigureButtonLabelInsets(button, dropdownLabelRightInset);
+                if (i >= optionIndicators.Count)
+                {
+                    continue;
+                }
+
+                var indicator = optionIndicators[i];
+                if (indicator == null)
+                {
+                    continue;
+                }
+
+                indicator.gameObject.SetActive(selected);
             }
         }
 
@@ -773,7 +808,7 @@ public sealed class ModMenuBuilder
             scrollbarRect.offsetMax = Vector2.zero;
 
             ApplyRoundedImage(trackImage);
-            trackImage.color = SliderTrackDarkGray;
+            trackImage.color = _sliderTrackDarkGray;
             trackImage.raycastTarget = true;
 
             scrollbar.direction = Scrollbar.Direction.BottomToTop;
@@ -834,7 +869,6 @@ public sealed class ModMenuBuilder
     private TMP_InputField CreateNumberInput(Transform parent, string name)
     {
         var input = ModMenuObjectFactory.CreateInputField(name, parent, out var rootRect, out var image);
-        var root = rootRect.gameObject;
         ApplyInputFrameStyle(image);
 
         input.targetGraphic = image;
@@ -849,12 +883,12 @@ public sealed class ModMenuBuilder
         textAreaRect.offsetMax = new Vector2(-InputPadding, -6f);
         ModMenuObjectFactory.GetOrAddRectMask2D(textArea);
 
-        var placeholderObject = CreateTextObject(textAreaRect, "Enter value", _textStyle, _textStyle.fontSize - 2f,
+        var placeholderObject = CreateTextObject(textAreaRect, "Enter value", _textStyle, _textStyle.FontSize - 2f,
             TextAnchor.MiddleLeft, TextAlignmentOptions.Left);
         placeholderObject.name = "Placeholder";
         SetTextColor(placeholderObject, new Color(0.83f, 0.86f, 0.91f, 0.55f));
 
-        var textObject = CreateTextObject(textAreaRect, string.Empty, _textStyle, _textStyle.fontSize - 2f,
+        var textObject = CreateTextObject(textAreaRect, string.Empty, _textStyle, _textStyle.FontSize - 2f,
             TextAnchor.MiddleLeft, TextAlignmentOptions.Left);
         textObject.name = "Text";
 
@@ -893,7 +927,7 @@ public sealed class ModMenuBuilder
         trackRect.anchoredPosition = Vector2.zero;
         trackRect.sizeDelta = new Vector2(-SliderHorizontalPadding * 2f, SliderBackdropHeight);
         ApplyRoundedImage(trackImage);
-        trackImage.color = SliderTrackDarkGray;
+        trackImage.color = _sliderTrackDarkGray;
         trackImage.raycastTarget = true;
 
         var handleAreaRect = ModMenuObjectFactory.CreateRect("Handle Slide Area", trackRect);
@@ -1054,6 +1088,54 @@ public sealed class ModMenuBuilder
         button.colors = colors;
     }
 
+    private static Image ConfigureDropdownArrowIndicator(Transform parent, string objectName, float rightPadding,
+        float rotationZ)
+    {
+        if (parent == null || string.IsNullOrWhiteSpace(objectName))
+        {
+            return null;
+        }
+
+        if (_dropdownArrowSprite == null)
+        {
+            _dropdownArrowSprite = TryGetGameSprite(DropdownArrowSpriteName);
+        }
+
+        if (_dropdownArrowSprite == null)
+        {
+            return null;
+        }
+
+        var arrowRect = parent.Find(objectName) as RectTransform ?? ModMenuObjectFactory.CreateRect(objectName, parent);
+
+        if (arrowRect == null)
+        {
+            return null;
+        }
+
+        var arrowImage = arrowRect.GetComponent<Image>() ?? ModMenuObjectFactory.GetOrAddComponent<Image>(arrowRect.gameObject);
+        if (arrowImage == null)
+        {
+            return null;
+        }
+
+        arrowRect.anchorMin = new Vector2(1f, 0.5f);
+        arrowRect.anchorMax = new Vector2(1f, 0.5f);
+        arrowRect.pivot = new Vector2(0.5f, 0.5f);
+        arrowRect.anchoredPosition = new Vector2(-rightPadding, 0f);
+        arrowRect.sizeDelta = new Vector2(DropdownOptionHeight, DropdownOptionHeight);
+        arrowRect.localScale = Vector3.one;
+        arrowRect.localRotation = Quaternion.Euler(0f, 0f, rotationZ);
+        arrowRect.SetAsLastSibling();
+
+        arrowImage.sprite = _dropdownArrowSprite;
+        arrowImage.type = Image.Type.Simple;
+        arrowImage.preserveAspect = true;
+        arrowImage.color = Color.white;
+        arrowImage.raycastTarget = false;
+        return arrowImage;
+    }
+
     private static void ApplyFramePanelStyle(Image image)
     {
         if (image == null)
@@ -1116,7 +1198,7 @@ public sealed class ModMenuBuilder
         if (_inputFrameSprite == null)
         {
             ApplyRoundedImage(image);
-            image.color = Dark;
+            image.color = _dark;
             return;
         }
 
@@ -1142,12 +1224,14 @@ public sealed class ModMenuBuilder
         if (_sliderHandleSprite == null)
         {
             ApplyRoundedImage(image);
-            image.color = Blue;
-            if (rect != null)
+            image.color = _blue;
+            if (rect == null)
             {
-                var fallbackSize = ToggleBaseSpriteSize * ToggleScaleMultiplier;
-                rect.sizeDelta = new Vector2(fallbackSize, fallbackSize);
+                return;
             }
+
+            const float fallbackSize = ToggleBaseSpriteSize * ToggleScaleMultiplier;
+            rect.sizeDelta = new Vector2(fallbackSize, fallbackSize);
 
             return;
         }
@@ -1325,13 +1409,13 @@ public sealed class ModMenuBuilder
         var tickImage = ConfigureToggleSpriteVisual(button);
         if (tickImage == null)
         {
-            var fallbackColor = value ? Green : Red;
-            ApplyButtonStyle(button, fallbackColor, fallbackColor, GetPressedTint(fallbackColor), Dark);
+            var fallbackColor = value ? _green : _red;
+            ApplyButtonStyle(button, fallbackColor, fallbackColor, GetPressedTint(fallbackColor), _dark);
             SetButtonLabel(button, value ? "ON" : "OFF", default);
             return;
         }
 
-        ApplyButtonStyle(button, Color.white, Color.white, GetPressedTint(Color.white), Dark);
+        ApplyButtonStyle(button, Color.white, Color.white, GetPressedTint(Color.white), _dark);
         SetButtonLabel(button, string.Empty, default);
         ApplyToggleStateSprite(tickImage, value);
     }
@@ -1485,13 +1569,8 @@ public sealed class ModMenuBuilder
 
     private static bool TryParseInt(string value, out int parsed)
     {
-        var style = NumberStyles.Integer;
-        if (int.TryParse(value, style, CultureInfo.InvariantCulture, out parsed))
-        {
-            return true;
-        }
-
-        return int.TryParse(value, style, CultureInfo.CurrentCulture, out parsed);
+        const NumberStyles style = NumberStyles.Integer;
+        return int.TryParse(value, style, CultureInfo.InvariantCulture, out parsed) || int.TryParse(value, style, CultureInfo.CurrentCulture, out parsed);
     }
 
     private static void CapSliderRange(ref int min, ref int max)
@@ -1523,24 +1602,14 @@ public sealed class ModMenuBuilder
 
     private static bool TryParseFloat(string value, out float parsed)
     {
-        var style = NumberStyles.Float | NumberStyles.AllowThousands;
-        if (float.TryParse(value, style, CultureInfo.InvariantCulture, out parsed))
-        {
-            return true;
-        }
-
-        return float.TryParse(value, style, CultureInfo.CurrentCulture, out parsed);
+        const NumberStyles style = NumberStyles.Float | NumberStyles.AllowThousands;
+        return float.TryParse(value, style, CultureInfo.InvariantCulture, out parsed) || float.TryParse(value, style, CultureInfo.CurrentCulture, out parsed);
     }
 
     private static bool TryParseDouble(string value, out double parsed)
     {
-        var style = NumberStyles.Float | NumberStyles.AllowThousands;
-        if (double.TryParse(value, style, CultureInfo.InvariantCulture, out parsed))
-        {
-            return true;
-        }
-
-        return double.TryParse(value, style, CultureInfo.CurrentCulture, out parsed);
+        const NumberStyles style = NumberStyles.Float | NumberStyles.AllowThousands;
+        return double.TryParse(value, style, CultureInfo.InvariantCulture, out parsed) || double.TryParse(value, style, CultureInfo.CurrentCulture, out parsed);
     }
 
     private static void SetInputText(TMP_InputField input, string value)
@@ -1645,13 +1714,13 @@ public sealed class ModMenuBuilder
     private static GameObject CreateTextObject(Transform parent, string text, ModMenuTextStyle style, float fontSize,
         TextAnchor uiAlignment, TextAlignmentOptions tmpAlignment)
     {
-        if (style.isTmp && style.tmpFont != null)
+        if (style.IsTmp && style.TMPFont != null)
         {
             var tmp = ModMenuObjectFactory.CreateTmpText("Text", parent, out _);
             var tmpTextObject = tmp.gameObject;
-            tmp.font = style.tmpFont;
+            tmp.font = style.TMPFont;
             tmp.fontSize = fontSize;
-            tmp.color = style.color;
+            tmp.color = style.Color;
             tmp.alignment = tmpAlignment;
             tmp.enableWordWrapping = false;
             tmp.SetText(text);
@@ -1662,9 +1731,9 @@ public sealed class ModMenuBuilder
         var rect = ModMenuObjectFactory.CreateRect("Text", parent);
         var textObject = rect.gameObject;
         var uiText = textObject.AddComponent<Text>();
-        uiText.font = style.uiFont;
+        uiText.font = style.UIFont;
         uiText.fontSize = Mathf.RoundToInt(fontSize);
-        uiText.color = style.color;
+        uiText.color = style.Color;
         uiText.alignment = uiAlignment;
         uiText.text = text;
         uiText.raycastTarget = false;
@@ -1680,9 +1749,29 @@ public sealed class ModMenuBuilder
         }
 
         var labelObject = GetOrCreateCustomLabel(button.transform, style,
-            style.fontSize > 0f ? style.fontSize : 24f);
+            style.FontSize > 0f ? style.FontSize : 24f);
         SetLabelText(labelObject, label);
         DisableOtherText(button.gameObject, labelObject);
+    }
+
+    private static void ConfigureButtonLabelInsets(Button button, float rightInset)
+    {
+        if (button == null)
+        {
+            return;
+        }
+
+        var labelTransform = button.transform.Find(CustomLabelName);
+        var labelRect = labelTransform as RectTransform;
+        if (labelRect == null)
+        {
+            return;
+        }
+
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = Vector2.zero;
+        labelRect.offsetMax = new Vector2(-Mathf.Max(0f, rightInset), 0f);
     }
 
     private static GameObject GetOrCreateCustomLabel(Transform parent, ModMenuTextStyle style, float fontSize)
@@ -1693,14 +1782,14 @@ public sealed class ModMenuBuilder
             return existing.gameObject;
         }
 
-        if (style.uiFont == null && style.tmpFont == null)
+        if (style.UIFont == null && style.TMPFont == null)
         {
             style = new ModMenuTextStyle
             {
-                isTmp = false,
-                uiFont = Resources.GetBuiltinResource<Font>("Arial.ttf"),
-                fontSize = 24f,
-                color = Color.white
+                IsTmp = false,
+                UIFont = Resources.GetBuiltinResource<Font>("Arial.ttf"),
+                FontSize = 24f,
+                Color = Color.white
             };
         }
 
@@ -1777,17 +1866,12 @@ public sealed class ModMenuBuilder
 
     private static float ToSafeFloat(double value)
     {
-        if (value <= float.MinValue)
+        return value switch
         {
-            return float.MinValue;
-        }
-
-        if (value >= float.MaxValue)
-        {
-            return float.MaxValue;
-        }
-
-        return (float)value;
+            <= float.MinValue => float.MinValue,
+            >= float.MaxValue => float.MaxValue,
+            _ => (float)value
+        };
     }
 
     private static float RoundToStep(float value, float step)

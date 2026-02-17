@@ -3,7 +3,7 @@ using UnityEngine.Events;
 using UnityEngine.SceneManagement;
 using SurvivorModMenu.ModMenu;
 #if DEBUG
-using SurvivorModMenu.Debugging;
+using SurvivorModMenu.Debug;
 #endif
 
 [assembly: MelonInfo(typeof(SurvivorModMenu.SurvivorModMenuPlugin), SurvivorModMenu.BuildInfo.Name, SurvivorModMenu.BuildInfo.Version, SurvivorModMenu.BuildInfo.Author, SurvivorModMenu.BuildInfo.Download)]

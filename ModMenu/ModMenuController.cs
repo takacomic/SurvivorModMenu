@@ -1,11 +1,9 @@
-using System.Linq;
 using System.Reflection;
 using Il2CppInterop.Runtime;
 using Il2CppTMPro;
 using Il2CppVampireSurvivors.Graphics;
 using Il2CppVampireSurvivors.UI;
 using SurvivorModMenu.ModMenu.Components;
-using UnityEngine.EventSystems;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
 
@@ -27,6 +25,8 @@ internal static class ModMenuController
     private const string SafeAreaName = "Safe Area";
     private const string TopBackButtonName = "SurvivorModMenu_TopBackButton";
     private const string TopResetButtonName = "SurvivorModMenu_TopResetButton";
+    private const string EnterCoopButtonName = "EnterCoopButton";
+    private const string EnterCoopButtonTypeName = "VampireSurvivors.App.Scripts.UI.EnterCoopButton";
     private const string VanillaMenuNavigatorsName = "Navigators (Menu)";
     private const string CustomNavigatorsRootName = "Navigators";
     private const string LeftNavigatorName = "NavigatorLeft";
@@ -53,7 +53,8 @@ internal static class ModMenuController
     private const float TabPanelWidthPercent = 0.2f;
     private const float TabPanelMinWidth = 92f;
     private const float TabPanelMaxWidth = 160f;
-    private const float TabButtonWidthReduction = 40f;
+    private const float TabButtonWidth = 120f;
+    private const float TabButtonHeight = 120f;
     private const float TabButtonMinFontSize = 10f;
     private const int TabButtonMaxVisibleLines = 2;
     private const float ScrollbarWidth = 14f;
@@ -63,38 +64,31 @@ internal static class ModMenuController
     private const float BottomPanelPositionY = -485f;
     private const float TopPanelContentPadding = 2f;
     private const float TopButtonSpacing = 12f;
-    private const float TopButtonMinWidth = 220f;
-    private const float TopButtonMinHeight = 60f;
+    private const float TopButtonWidth = 166.2f;
+    private const float TopButtonHeight = 97f;
     private const float NavigatorArrowSize = 72f;
     private const float NavigatorArrowSidePadding = 28f;
     private const int NavigatorArrowAnimationFps = 10;
     private const float NavigatorArrowObjectGap = 6f;
-    private const float DirectionalRepeatDelay = 0.18f;
-    private const float SliderDirectionalStep = 0.01f;
-    private const float MouseMoveThresholdSquared = 36f;
-    private const float ScrollIntoViewPadding = 8f;
+    private const float EnterCoopButtonAnchorX = 50f;
+    private const float EnterCoopResolveIntervalSeconds = 0.25f;
 
-    private static readonly Color Gray = new(0.34f, 0.36f, 0.40f, 1f);
-    private static readonly Color LightGray = new(0.57f, 0.60f, 0.66f, 1f);
-    private static readonly Color Blue = new(0.27f, 0.47f, 0.78f, 1f);
-    private static readonly Color Green = new(0.24f, 0.68f, 0.38f, 1f);
-    private static readonly Color Red = new(0.74f, 0.24f, 0.25f, 1f);
-    private static readonly Color Dark = new(0.16f, 0.18f, 0.22f, 1f);
-    private static readonly Color TrackbarDarkGray = new(0.23f, 0.23f, 0.23f, 0.9f);
-    private static readonly string[] MainMenuSceneNames = { "main menu", "mainmenu" };
-    private static readonly List<ModMenuSelectable> NavigationTargets = new();
-    private static readonly List<ModMenuSelectable> TabNavigationTargets = new();
-    private static readonly List<ModMenuSelectable> OptionNavigationTargets = new();
-    private static readonly List<ModMenuSelectable> BottomNavigationTargets = new();
-    private static readonly Dictionary<ModMenuSelectable, ModMenuMainOptionObject> OptionTargetOwners =
-        new();
-    private static readonly Dictionary<int, ModMenuMainOptionObject> MainOptionObjectsById = new();
-    private static readonly List<ModMenuMainOptionObject> MainOptionObjects = new();
-    private static readonly Vector3[] VisibilityCornerBuffer = new Vector3[4];
+    private static readonly Color _gray = new(0.34f, 0.36f, 0.40f, 1f);
+    private static readonly Color _lightGray = new(0.57f, 0.60f, 0.66f, 1f);
+    private static readonly Color _blue = new(0.27f, 0.47f, 0.78f, 1f);
+    private static readonly Color _green = new(0.24f, 0.68f, 0.38f, 1f);
+    private static readonly Color _red = new(0.74f, 0.24f, 0.25f, 1f);
+    private static readonly Color _dark = new(0.16f, 0.18f, 0.22f, 1f);
+    private static readonly Color _trackbarDarkGray = new(0.23f, 0.23f, 0.23f, 0.9f);
+    private static readonly string[] _mainMenuSceneNames = { "main menu", "mainmenu" };
+    private static readonly List<ModMenuSelectable> _navigationTargets = new();
+    private static readonly List<ModMenuSelectable> _bottomNavigationTargets = new();
+    private static readonly Dictionary<int, ModMenuMainOptionObject> _mainOptionObjectsById = new();
+    private static readonly List<ModMenuMainOptionObject> _mainOptionObjects = new();
 
     private static Sprite _roundedSprite;
     private static Sprite _framePanelSprite;
-    private static readonly Dictionary<string, Sprite> UiSpriteCache = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, Sprite> _uiSpriteCache = new(StringComparer.Ordinal);
 
     private static Button _modButton;
     private static Button _optionsAnchorButton;
@@ -129,26 +123,20 @@ internal static class ModMenuController
     private static float _nextScanTime;
     private static ModMenuTextStyle _textStyle;
     private static int _registryVersion = -1;
-    private static readonly Dictionary<string, List<Action<ModMenuBuilder>>> ModOptionsById =
+    private static readonly Dictionary<string, List<Action<ModMenuBuilder>>> _modOptionsById =
         new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, Button> EntryButtons = new();
-    private static readonly Dictionary<int, float> LabelBaseY = new();
+    private static readonly Dictionary<string, Button> _entryButtons = new();
+    private static readonly Dictionary<int, float> _labelBaseY = new();
     private static GameObject _modPageRoot;
     private static bool _optionsWasActive;
     private static bool _modWasActive;
     private static string _selectedEntryId;
-    private static GameObject _lastKnownSelectedObject;
-    private static GameObject _lastMouseSelectedObject;
-    private static Vector2 _lastMousePosition;
-    private static bool _mouseInputMode;
-    private static float _nextDirectionalInputTime;
-    private static ModMenuSelectable _lastTabTarget;
-    private static ModMenuSelectable _lastOptionTarget;
-    private static ModMenuSelectable _lastBottomTarget;
-    private static ModMenuSelectable _lastTargetBeforeBottom;
+    private static RectTransform _enterCoopButtonRect;
+    private static float _nextEnterCoopResolveTime;
 
     internal static void Update()
     {
+        EnsureEnterCoopButtonAnchorX();
         if (!IsReady())
         {
             if (Time.unscaledTime >= _nextScanTime)
@@ -190,17 +178,7 @@ internal static class ModMenuController
         }
 
         var normalizedName = sceneName.Trim().ToLowerInvariant();
-        foreach (var expectedName in MainMenuSceneNames)
-        {
-            if (!normalizedName.Equals(expectedName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            return true;
-        }
-
-        return false;
+        return _mainMenuSceneNames.Any(expectedName => normalizedName.Equals(expectedName, StringComparison.Ordinal));
     }
 
     private static void TrySetup()
@@ -214,11 +192,7 @@ internal static class ModMenuController
 
         if (_menuRoot == null)
         {
-            var existingMenu = GameObject.Find(MenuRootName);
-            if (existingMenu == null)
-            {
-                existingMenu = GameObject.Find(LegacyMenuRootName);
-            }
+            var existingMenu = GameObject.Find(MenuRootName) ?? GameObject.Find(LegacyMenuRootName);
 
             if (existingMenu != null)
             {
@@ -266,6 +240,70 @@ internal static class ModMenuController
         EnsureTopButtons();
     }
 
+    private static void EnsureEnterCoopButtonAnchorX()
+    {
+        var enterCoopRect = ResolveEnterCoopButtonRect();
+        if (enterCoopRect == null)
+        {
+            return;
+        }
+
+        var anchoredPosition = enterCoopRect.anchoredPosition;
+        if (Mathf.Abs(anchoredPosition.x - EnterCoopButtonAnchorX) <= 0.01f)
+        {
+            return;
+        }
+
+        enterCoopRect.anchoredPosition = new Vector2(EnterCoopButtonAnchorX, anchoredPosition.y);
+    }
+
+    private static RectTransform ResolveEnterCoopButtonRect()
+    {
+        if (_enterCoopButtonRect != null && _enterCoopButtonRect.gameObject != null &&
+            _enterCoopButtonRect.gameObject.scene.IsValid())
+        {
+            return _enterCoopButtonRect;
+        }
+
+        if (Time.unscaledTime < _nextEnterCoopResolveTime)
+        {
+            return null;
+        }
+
+        _nextEnterCoopResolveTime = Time.unscaledTime + EnterCoopResolveIntervalSeconds;
+        var enterCoopObject = GameObject.Find(EnterCoopButtonName) ?? FindSceneObjectByName(EnterCoopButtonName);
+        if (enterCoopObject != null)
+        {
+            _enterCoopButtonRect = enterCoopObject.GetComponent<RectTransform>();
+            if (_enterCoopButtonRect != null)
+            {
+                return _enterCoopButtonRect;
+            }
+        }
+
+        foreach (var component in Resources.FindObjectsOfTypeAll<Component>())
+        {
+            if (!IsSceneObject(component) || component.gameObject == null)
+            {
+                continue;
+            }
+
+            var type = component.GetType();
+            if (!string.Equals(type.FullName, EnterCoopButtonTypeName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            _enterCoopButtonRect = component.gameObject.GetComponent<RectTransform>();
+            if (_enterCoopButtonRect != null)
+            {
+                return _enterCoopButtonRect;
+            }
+        }
+
+        return null;
+    }
+
     private static Button CreateMainMenuButton(Button optionsButton)
     {
         if (optionsButton == null)
@@ -279,7 +317,7 @@ internal static class ModMenuController
             return null;
         }
 
-        var modButton = CloneButtonFromTemplate(optionsButton, parent, ModButtonName) ?? CreateButton(parent, ModButtonName, "MODS", Blue, LightGray, Green, Dark);
+        var modButton = CloneButtonFromTemplate(optionsButton, parent, ModButtonName) ?? CreateButton(parent, ModButtonName, "MODS", _blue, _lightGray, _green, _dark);
         if (modButton == null)
         {
             return null;
@@ -310,10 +348,8 @@ internal static class ModMenuController
             return;
         }
 
-        _mouseInputMode = false;
-        _nextDirectionalInputTime = 0f;
-        _lastMousePosition = Input.mousePosition;
         SetNavigatorVisibility(modMenuVisible: true);
+        _navigatorVisuals?.ResetNavigationState();
         _menuRoot.transform.SetAsLastSibling();
         SetMenuVisible(true);
         CacheMenuButtonState();
@@ -334,9 +370,7 @@ internal static class ModMenuController
         SetScrollbarsVisible(false, false);
         ApplyMenuButtonVisibility(true);
         SetNavigatorVisibility(modMenuVisible: false);
-        _mouseInputMode = false;
-        _nextDirectionalInputTime = 0f;
-        _lastMousePosition = Input.mousePosition;
+        _navigatorVisuals?.ResetNavigationState();
     }
 
     private static void SetMenuVisible(bool visible)
@@ -387,32 +421,7 @@ internal static class ModMenuController
         }
 
         var activeObject = GameObject.Find(objectName);
-        if (activeObject != null)
-        {
-            return activeObject;
-        }
-
-        foreach (var transform in Resources.FindObjectsOfTypeAll<Transform>())
-        {
-            if (transform == null || transform.gameObject == null)
-            {
-                continue;
-            }
-
-            if (!string.Equals(transform.name, objectName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (!IsSceneObject(transform))
-            {
-                continue;
-            }
-
-            return transform.gameObject;
-        }
-
-        return null;
+        return activeObject != null ? activeObject : (from transform in Resources.FindObjectsOfTypeAll<Transform>() where transform != null && transform.gameObject != null where string.Equals(transform.name, objectName, StringComparison.Ordinal) where IsSceneObject(transform) select transform.gameObject).FirstOrDefault();
     }
 
     private static void EnsureCustomNavigators()
@@ -424,11 +433,8 @@ internal static class ModMenuController
 
         if (_customNavigatorsRoot == null)
         {
-            var existingNavigators = _menuRoot.transform.Find(CustomNavigatorsRootName);
-            if (existingNavigators == null)
-            {
-                existingNavigators = _panelRoot.transform.Find(CustomNavigatorsRootName);
-            }
+            var existingNavigators = _menuRoot.transform.Find(CustomNavigatorsRootName) ??
+                                     _panelRoot.transform.Find(CustomNavigatorsRootName);
 
             if (existingNavigators != null)
             {
@@ -570,72 +576,12 @@ internal static class ModMenuController
         }
 
         RefreshNavigationTargets();
-        if (NavigationTargets.Count <= 0)
+        if (_navigationTargets.Count <= 0)
         {
             _navigatorVisuals?.SetVisible(false);
             return;
         }
-
-        if (TryFindTargetByGameObject(GetCurrentSelectedObject(), out var selectedBySystem))
-        {
-            _lastKnownSelectedObject = selectedBySystem.SelectionObject;
-            if (_mouseInputMode)
-            {
-                _lastMouseSelectedObject = selectedBySystem.SelectionObject;
-            }
-        }
-
-        if (WasMouseUsedThisFrame())
-        {
-            _mouseInputMode = true;
-            if (TryFindTargetByGameObject(GetCurrentSelectedObject(), out var pointerTarget))
-            {
-                _lastMouseSelectedObject = pointerTarget.SelectionObject;
-                _lastKnownSelectedObject = pointerTarget.SelectionObject;
-            }
-
-            _navigatorVisuals?.SetVisible(false);
-            return;
-        }
-
-        if (TryGetDirectionalInput(out var direction))
-        {
-            _mouseInputMode = false;
-
-            var currentTarget = ResolveCurrentNavigationTarget() ?? ResolveFallbackNavigationTarget();
-            if (currentTarget == null)
-            {
-                _navigatorVisuals?.SetVisible(false);
-                return;
-            }
-
-            if (TryHandleSliderDirectionalInput(currentTarget, direction))
-            {
-                ApplyNavigationSelection(currentTarget, ensureVisible: true);
-                UpdateNavigatorForTarget(currentTarget);
-                return;
-            }
-
-            var nextTarget = FindDirectionalTarget(currentTarget, direction) ?? currentTarget;
-            ApplyNavigationSelection(nextTarget, ensureVisible: true);
-            UpdateNavigatorForTarget(nextTarget);
-            return;
-        }
-
-        if (_mouseInputMode)
-        {
-            return;
-        }
-
-        var selectedTarget = ResolveCurrentNavigationTarget() ?? ResolveFallbackNavigationTarget();
-        if (selectedTarget == null)
-        {
-            _navigatorVisuals?.SetVisible(false);
-            return;
-        }
-
-        ApplyNavigationSelection(selectedTarget, ensureVisible: true);
-        UpdateNavigatorForTarget(selectedTarget);
+        _navigatorVisuals?.UpdateNavigation();
     }
 
     private static bool IsMenuOpen()
@@ -655,32 +601,39 @@ internal static class ModMenuController
 
     private static void SelectInitialNavigationTarget()
     {
-        _mouseInputMode = false;
         RefreshNavigationTargets();
-
-        var initialTarget = FindInitialNavigationTarget();
-        if (initialTarget == null)
+        if (_navigatorVisuals == null)
         {
-            _navigatorVisuals?.SetVisible(false);
             return;
         }
 
-        ApplyNavigationSelection(initialTarget, ensureVisible: true);
-        UpdateNavigatorForTarget(initialTarget);
+        _navigatorVisuals.ResetNavigationState();
+        _navigatorVisuals.SelectInitialTarget();
     }
 
     private static void RefreshNavigationTargets()
     {
-        NavigationTargets.Clear();
-        TabNavigationTargets.Clear();
-        OptionNavigationTargets.Clear();
-        BottomNavigationTargets.Clear();
-        OptionTargetOwners.Clear();
-        MainOptionObjectsById.Clear();
-        MainOptionObjects.Clear();
+        _navigationTargets.Clear();
+        _bottomNavigationTargets.Clear();
+        _mainOptionObjectsById.Clear();
+        _mainOptionObjects.Clear();
         EnsureNavigationPanels();
+        _navigatorVisuals?.BeginSelectableRegistration();
         _listNavigationPanel?.BeginTargetRegistration();
         _contentNavigationPanel?.BeginTargetRegistration();
+
+        // Dropdown overlays temporarily replace normal option navigation so only overlay controls
+        // are reachable while the overlay is open.
+        if (TryGetActiveDropdownOverlay(out var activeDropdownOverlay))
+        {
+            AddDropdownOverlayNavigationTargets(activeDropdownOverlay);
+            if (_navigationTargets.Count > 0)
+            {
+                FinalizeNavigationTargets();
+                return;
+            }
+        }
+
         AddTopButtonNavigationTargets();
         AddTabButtonNavigationTargets();
         AddOptionNavigationTargets();
@@ -725,8 +678,28 @@ internal static class ModMenuController
 
     private static void AddTabButtonNavigationTargets()
     {
-        foreach (var button in EntryButtons.Values)
+        if (_listRoot == null)
         {
+            foreach (var button in _entryButtons.Values.Where(button => button != null && button.gameObject.activeInHierarchy))
+            {
+                AddNavigationTarget(button.gameObject, button.GetComponent<RectTransform>(), _listNavigationPanel,
+                    isOptionObject: false);
+            }
+
+            return;
+        }
+
+        var listTransform = _listRoot.transform;
+        var childCount = listTransform.childCount;
+        for (var childIndex = 0; childIndex < childCount; childIndex++)
+        {
+            var child = listTransform.GetChild(childIndex);
+            if (child == null)
+            {
+                continue;
+            }
+
+            var button = child.GetComponent<Button>();
             if (button == null || !button.gameObject.activeInHierarchy)
             {
                 continue;
@@ -779,6 +752,90 @@ internal static class ModMenuController
         }
     }
 
+    private static bool TryGetActiveDropdownOverlay(out Transform overlayTransform)
+    {
+        overlayTransform = null;
+        if (_panelRoot == null)
+        {
+            return false;
+        }
+
+        var panelTransform = _panelRoot.transform;
+        for (var childIndex = panelTransform.childCount - 1; childIndex >= 0; childIndex--)
+        {
+            var child = panelTransform.GetChild(childIndex);
+            if (child == null || !child.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            var childName = child.name;
+            if (string.IsNullOrWhiteSpace(childName) ||
+                !childName.StartsWith("DropdownOverlay_", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            overlayTransform = child;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void AddDropdownOverlayNavigationTargets(Transform overlayTransform)
+    {
+        if (overlayTransform == null)
+        {
+            return;
+        }
+
+        foreach (var button in overlayTransform.GetComponentsInChildren<Button>(true))
+        {
+            if (button == null || !button.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            var anchorRect = button.GetComponent<RectTransform>();
+            if (anchorRect == null)
+            {
+                continue;
+            }
+
+            var ownerPanel = ResolveNavigationOwnerPanel(button.transform);
+            AddNavigationTarget(button.gameObject, anchorRect, ownerPanel, isOptionObject: true);
+        }
+
+        foreach (var inputField in overlayTransform.GetComponentsInChildren<TMP_InputField>(true))
+        {
+            if (inputField == null || !inputField.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            var inputRect = inputField.GetComponent<RectTransform>();
+            if (inputRect == null)
+            {
+                continue;
+            }
+
+            var ownerPanel = ResolveNavigationOwnerPanel(inputField.transform);
+            AddNavigationTarget(inputField.gameObject, inputRect, ownerPanel, isOptionObject: true);
+        }
+
+        foreach (var slider in overlayTransform.GetComponentsInChildren<Slider>(true))
+        {
+            if (slider == null || slider.handleRect == null || !slider.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            var ownerPanel = ResolveNavigationOwnerPanel(slider.transform);
+            AddNavigationTarget(slider.gameObject, slider.handleRect, ownerPanel, isOptionObject: true);
+        }
+    }
+
     private static bool IsOptionNavigationButton(Button button)
     {
         if (button == null || !button.gameObject.activeInHierarchy)
@@ -791,12 +848,7 @@ internal static class ModMenuController
             return false;
         }
 
-        if (IsTabEntryButton(button))
-        {
-            return false;
-        }
-
-        return IsChildOfPanelRoot(button.transform);
+        return !IsTabEntryButton(button) && IsChildOfPanelRoot(button.transform);
     }
 
     private static bool IsOptionNavigationInputField(TMP_InputField inputField)
@@ -837,25 +889,7 @@ internal static class ModMenuController
 
     private static bool IsTabEntryButton(Button button)
     {
-        if (button == null)
-        {
-            return false;
-        }
-
-        foreach (var entryButton in EntryButtons.Values)
-        {
-            if (entryButton == null)
-            {
-                continue;
-            }
-
-            if (entryButton.gameObject == button.gameObject)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return button != null && _entryButtons.Values.Where(entryButton => entryButton != null).Any(entryButton => entryButton.gameObject == button.gameObject);
     }
 
     private static bool IsChildOfPanelRoot(Transform target)
@@ -908,32 +942,69 @@ internal static class ModMenuController
             return;
         }
 
+        DisableAutomaticSelectableNavigation(selectionObject);
         targetComponent.Configure(anchorRect, ownerPanel, isOptionObject);
         if (!targetComponent.IsValid())
         {
             return;
         }
 
-        foreach (var existingTarget in NavigationTargets)
+        if (_navigationTargets.Any(existingTarget => existingTarget == targetComponent))
         {
-            if (existingTarget == targetComponent)
-            {
-                return;
-            }
+            return;
         }
 
-        NavigationTargets.Add(targetComponent);
+        _navigationTargets.Add(targetComponent);
         ownerPanel?.RegisterTarget(targetComponent);
         RegisterTargetByPanel(targetComponent);
+        _navigatorVisuals?.RegisterSelectable(targetComponent, ResolveNavigatorListType(targetComponent));
         RegisterMainOptionObject(targetComponent);
+    }
+
+    private static void DisableAutomaticSelectableNavigation(GameObject selectionObject)
+    {
+        if (selectionObject == null)
+        {
+            return;
+        }
+
+        var selectable = selectionObject.GetComponent<Selectable>();
+        if (selectable == null)
+        {
+            return;
+        }
+
+        var navigation = selectable.navigation;
+        if (navigation.mode == Navigation.Mode.None)
+        {
+            return;
+        }
+
+        navigation.mode = Navigation.Mode.None;
+        navigation.selectOnUp = null;
+        navigation.selectOnDown = null;
+        navigation.selectOnLeft = null;
+        navigation.selectOnRight = null;
+        selectable.navigation = navigation;
     }
 
     private static void FinalizeNavigationTargets()
     {
-        SortNavigationTargets(TabNavigationTargets, horizontalSort: false);
-        SortNavigationTargets(BottomNavigationTargets, horizontalSort: true);
+        SortNavigationTargets(_bottomNavigationTargets, horizontalSort: true);
         UpdateMainOptionLocalPositions();
-        SortOptionNavigationTargets();
+        _navigatorVisuals?.FinalizeSelectableRegistration();
+    }
+
+    private static ModMenuSelectableListType ResolveNavigatorListType(ModMenuSelectable target)
+    {
+        var panelType = ResolvePanelType(target);
+        return panelType switch
+        {
+            NavigationPanelType.Tab => ModMenuSelectableListType.Tab,
+            NavigationPanelType.Options => ModMenuSelectableListType.Options,
+            NavigationPanelType.Bottom => ModMenuSelectableListType.Bottom,
+            _ => ModMenuSelectableListType.Unknown
+        };
     }
 
     private static void RegisterTargetByPanel(ModMenuSelectable target)
@@ -947,14 +1018,12 @@ internal static class ModMenuController
         switch (panelType)
         {
             case NavigationPanelType.Tab:
-                TabNavigationTargets.Add(target);
-                break;
             case NavigationPanelType.Options:
-                OptionNavigationTargets.Add(target);
                 break;
             case NavigationPanelType.Bottom:
-                BottomNavigationTargets.Add(target);
+                _bottomNavigationTargets.Add(target);
                 break;
+            case NavigationPanelType.Unknown:
             default:
                 break;
         }
@@ -967,11 +1036,8 @@ internal static class ModMenuController
             return;
         }
 
-        var optionRoot = ResolveMainOptionRoot(target.AnchorRect != null ? target.AnchorRect.transform : null);
-        if (optionRoot == null)
-        {
-            optionRoot = ResolveMainOptionRoot(target.SelectionObject != null ? target.SelectionObject.transform : null);
-        }
+        var optionRoot = ResolveMainOptionRoot(target.AnchorRect?.transform) ??
+                         ResolveMainOptionRoot(target.SelectionObject?.transform);
 
         if (optionRoot == null)
         {
@@ -985,7 +1051,7 @@ internal static class ModMenuController
         }
 
         var optionId = optionRoot.gameObject.GetInstanceID();
-        if (!MainOptionObjectsById.TryGetValue(optionId, out var mainOptionObject) || mainOptionObject == null)
+        if (!_mainOptionObjectsById.TryGetValue(optionId, out var mainOptionObject) || mainOptionObject == null)
         {
             mainOptionObject = optionRoot.gameObject.GetComponent<ModMenuMainOptionObject>() ??
                                ModMenuObjectFactory.GetOrAddComponent<ModMenuMainOptionObject>(optionRoot.gameObject);
@@ -994,14 +1060,13 @@ internal static class ModMenuController
                 return;
             }
 
-            mainOptionObject.Configure(optionRect, _contentScrollRect != null ? _contentScrollRect.content : null);
+            mainOptionObject.Configure(optionRect, _contentScrollRect?.content);
             mainOptionObject.ClearSubTargets();
-            MainOptionObjectsById[optionId] = mainOptionObject;
-            MainOptionObjects.Add(mainOptionObject);
+            _mainOptionObjectsById[optionId] = mainOptionObject;
+            _mainOptionObjects.Add(mainOptionObject);
         }
 
         mainOptionObject.RegisterSubTarget(target);
-        OptionTargetOwners[target] = mainOptionObject;
     }
 
     private static Transform ResolveMainOptionRoot(Transform targetTransform)
@@ -1033,90 +1098,16 @@ internal static class ModMenuController
 
     private static void UpdateMainOptionLocalPositions()
     {
-        var referenceRect = _contentScrollRect != null ? _contentScrollRect.content : null;
-        foreach (var mainOptionObject in MainOptionObjects)
+        var referenceRect = _contentScrollRect?.content;
+        foreach (var mainOptionObject in _mainOptionObjects.Where(mainOptionObject => mainOptionObject != null))
         {
-            if (mainOptionObject == null)
-            {
-                continue;
-            }
-
             mainOptionObject.UpdateLocalY(referenceRect);
         }
     }
 
-    private static void SortOptionNavigationTargets()
-    {
-        OptionNavigationTargets.Sort(CompareOptionTargets);
-    }
-
-    private static int CompareOptionTargets(ModMenuSelectable left, ModMenuSelectable right)
-    {
-        if (ReferenceEquals(left, right))
-        {
-            return 0;
-        }
-
-        if (left == null)
-        {
-            return 1;
-        }
-
-        if (right == null)
-        {
-            return -1;
-        }
-
-        var leftRowY = GetOptionRowY(left);
-        var rightRowY = GetOptionRowY(right);
-        var rowComparison = rightRowY.CompareTo(leftRowY);
-        if (rowComparison != 0)
-        {
-            return rowComparison;
-        }
-
-        if (TryGetPanelLocalCenter(left.AnchorRect, out var leftCenter) &&
-            TryGetPanelLocalCenter(right.AnchorRect, out var rightCenter))
-        {
-            var yComparison = rightCenter.y.CompareTo(leftCenter.y);
-            if (yComparison != 0)
-            {
-                return yComparison;
-            }
-
-            var xComparison = leftCenter.x.CompareTo(rightCenter.x);
-            if (xComparison != 0)
-            {
-                return xComparison;
-            }
-        }
-
-        return left.SelectionObject.GetInstanceID().CompareTo(right.SelectionObject.GetInstanceID());
-    }
-
-    private static float GetOptionRowY(ModMenuSelectable target)
-    {
-        if (target == null)
-        {
-            return float.NegativeInfinity;
-        }
-
-        if (OptionTargetOwners.TryGetValue(target, out var owner) && owner != null)
-        {
-            return owner.LocalY;
-        }
-
-        if (TryGetPanelLocalCenter(target.AnchorRect, out var center))
-        {
-            return center.y;
-        }
-
-        return float.NegativeInfinity;
-    }
-
     private static void SortNavigationTargets(List<ModMenuSelectable> targets, bool horizontalSort)
     {
-        if (targets == null || targets.Count <= 1)
+        if (targets is not { Count: > 1 })
         {
             return;
         }
@@ -1152,541 +1143,11 @@ internal static class ModMenuController
         if (horizontalSort)
         {
             var xComparison = leftCenter.x.CompareTo(rightCenter.x);
-            if (xComparison != 0)
-            {
-                return xComparison;
-            }
-
-            return rightCenter.y.CompareTo(leftCenter.y);
+            return xComparison != 0 ? xComparison : rightCenter.y.CompareTo(leftCenter.y);
         }
 
         var yComparison = rightCenter.y.CompareTo(leftCenter.y);
-        if (yComparison != 0)
-        {
-            return yComparison;
-        }
-
-        return leftCenter.x.CompareTo(rightCenter.x);
-    }
-
-    private static GameObject GetCurrentSelectedObject()
-    {
-        var eventSystem = EventSystem.current;
-        if (eventSystem == null)
-        {
-            return null;
-        }
-
-        return eventSystem.currentSelectedGameObject;
-    }
-
-    private static bool WasMouseUsedThisFrame()
-    {
-        var mousePosition = (Vector2)Input.mousePosition;
-        var mouseMoved = (mousePosition - _lastMousePosition).sqrMagnitude > MouseMoveThresholdSquared;
-        _lastMousePosition = mousePosition;
-
-        if (!Input.mousePresent)
-        {
-            return false;
-        }
-
-        if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1) || Input.GetMouseButtonDown(2))
-        {
-            return true;
-        }
-
-        if (Input.mouseScrollDelta.sqrMagnitude > 0.01f)
-        {
-            return true;
-        }
-
-        if (!mouseMoved)
-        {
-            return false;
-        }
-
-        if (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject())
-        {
-            return false;
-        }
-
-        return Input.GetMouseButton(0) || Input.GetMouseButton(1) || Input.GetMouseButton(2);
-    }
-
-    private static bool TryGetDirectionalInput(out Vector2 direction)
-    {
-        direction = Vector2.zero;
-        if (Time.unscaledTime < _nextDirectionalInputTime)
-        {
-            return false;
-        }
-
-        if (Input.GetKey(KeyCode.UpArrow))
-        {
-            direction = Vector2.up;
-        }
-        else if (Input.GetKey(KeyCode.DownArrow))
-        {
-            direction = Vector2.down;
-        }
-        else if (Input.GetKey(KeyCode.LeftArrow))
-        {
-            direction = Vector2.left;
-        }
-        else if (Input.GetKey(KeyCode.RightArrow))
-        {
-            direction = Vector2.right;
-        }
-        else
-        {
-            return false;
-        }
-
-        _nextDirectionalInputTime = Time.unscaledTime + DirectionalRepeatDelay;
-        return true;
-    }
-
-    private static ModMenuSelectable ResolveCurrentNavigationTarget()
-    {
-        if (TryFindTargetByGameObject(GetCurrentSelectedObject(), out var currentTarget))
-        {
-            return currentTarget;
-        }
-
-        if (TryFindTargetBySelectionObject(_lastKnownSelectedObject, out var lastKnownTarget))
-        {
-            return lastKnownTarget;
-        }
-
-        return null;
-    }
-
-    private static ModMenuSelectable ResolveFallbackNavigationTarget()
-    {
-        if (TryFindTargetBySelectionObject(_lastMouseSelectedObject, out var mouseTarget))
-        {
-            return mouseTarget;
-        }
-
-        if (TryFindTargetBySelectionObject(_lastKnownSelectedObject, out var lastKnownTarget))
-        {
-            return lastKnownTarget;
-        }
-
-        return FindInitialNavigationTarget();
-    }
-
-    private static ModMenuSelectable FindInitialNavigationTarget()
-    {
-        var optionTarget = FindTopMostOptionTarget();
-        if (optionTarget != null)
-        {
-            return optionTarget;
-        }
-
-        return FindBackButtonTarget();
-    }
-
-    private static ModMenuSelectable FindTopMostOptionTarget()
-    {
-        return GetFirstValidTarget(OptionNavigationTargets);
-    }
-
-    private static ModMenuSelectable FindBackButtonTarget()
-    {
-        if (TryFindTargetBySelectionObject(_topBackButton?.gameObject, out var backTarget))
-        {
-            return backTarget;
-        }
-
-        return NavigationTargets.Count > 0 ? NavigationTargets[0] : null;
-    }
-
-    private static ModMenuSelectable FindDirectionalTarget(ModMenuSelectable currentTarget, Vector2 direction)
-    {
-        if (currentTarget == null || direction.sqrMagnitude <= 0.001f)
-        {
-            return null;
-        }
-
-        var normalizedDirection = direction.normalized;
-        var panelType = ResolvePanelType(currentTarget);
-        switch (panelType)
-        {
-            case NavigationPanelType.Options:
-                return FindDirectionalFromOptionsPanel(currentTarget, normalizedDirection);
-            case NavigationPanelType.Tab:
-                return FindDirectionalFromTabPanel(currentTarget, normalizedDirection);
-            case NavigationPanelType.Bottom:
-                return FindDirectionalFromBottomPanel(currentTarget, normalizedDirection);
-            default:
-                break;
-        }
-
-        if (!TryGetPanelLocalCenter(currentTarget.AnchorRect, out var currentCenter))
-        {
-            return null;
-        }
-
-        return FindBestDirectionalTarget(currentTarget, currentCenter, normalizedDirection, filter: null);
-    }
-
-    private static ModMenuSelectable FindDirectionalFromOptionsPanel(
-        ModMenuSelectable currentTarget, Vector2 normalizedDirection)
-    {
-        if (normalizedDirection.x < -0.5f && !IsSliderNavigationTarget(currentTarget))
-        {
-            return ResolveTabTargetForCrossPanel();
-        }
-
-        if (Mathf.Abs(normalizedDirection.y) > Mathf.Abs(normalizedDirection.x))
-        {
-            var moveUp = normalizedDirection.y > 0f;
-            var verticalTarget = FindAdjacentOptionVerticalTarget(currentTarget, moveUp);
-            if (verticalTarget != null)
-            {
-                return verticalTarget;
-            }
-
-            if (!IsBoundaryTarget(currentTarget, OptionNavigationTargets, moveUp))
-            {
-                return null;
-            }
-
-            _lastTargetBeforeBottom = currentTarget;
-            return ResolveBottomTargetForCrossPanel();
-        }
-
-        if (currentTarget.OwnerPanel == null)
-        {
-            return null;
-        }
-
-        var samePanelTarget = currentTarget.OwnerPanel.FindDirectionalTarget(currentTarget, normalizedDirection,
-            optionOnly: true);
-        if (samePanelTarget != null)
-        {
-            return samePanelTarget;
-        }
-
-        return FindAdjacentOptionVerticalTarget(currentTarget, normalizedDirection.y > 0f);
-    }
-
-    private static ModMenuSelectable FindDirectionalFromTabPanel(
-        ModMenuSelectable currentTarget, Vector2 normalizedDirection)
-    {
-        if (normalizedDirection.x > 0.5f)
-        {
-            return ResolveOptionTargetForCrossPanel();
-        }
-
-        if (Mathf.Abs(normalizedDirection.y) <= Mathf.Abs(normalizedDirection.x))
-        {
-            return null;
-        }
-
-        var moveUp = normalizedDirection.y > 0f;
-        var verticalTarget = FindVerticalTargetInList(currentTarget, TabNavigationTargets, moveUp);
-        if (verticalTarget != null)
-        {
-            return verticalTarget;
-        }
-
-        if (!IsBoundaryTarget(currentTarget, TabNavigationTargets, moveUp))
-        {
-            return null;
-        }
-
-        _lastTargetBeforeBottom = currentTarget;
-        return ResolveBottomTargetForCrossPanel();
-    }
-
-    private static ModMenuSelectable FindDirectionalFromBottomPanel(
-        ModMenuSelectable currentTarget, Vector2 normalizedDirection)
-    {
-        if (normalizedDirection.y > 0.5f)
-        {
-            return ResolveReturnFromBottomTarget();
-        }
-
-        if (Mathf.Abs(normalizedDirection.x) > 0.5f)
-        {
-            return FindHorizontalTargetInList(currentTarget, BottomNavigationTargets, normalizedDirection.x > 0f);
-        }
-
-        return null;
-    }
-
-    private static ModMenuSelectable FindAdjacentOptionVerticalTarget(
-        ModMenuSelectable currentTarget, bool moveUp)
-    {
-        if (currentTarget == null)
-        {
-            return null;
-        }
-
-        if (!TryGetPanelLocalCenter(currentTarget.AnchorRect, out var currentCenter))
-        {
-            return null;
-        }
-
-        ModMenuSelectable bestTarget = null;
-        var bestRowDistance = float.MaxValue;
-        var bestXDistance = float.MaxValue;
-        var currentRowY = GetOptionRowY(currentTarget);
-
-        foreach (var target in OptionNavigationTargets)
-        {
-            if (target == null || !target.IsValid() || ReferenceEquals(target, currentTarget))
-            {
-                continue;
-            }
-
-            var candidateRowY = GetOptionRowY(target);
-            var rowDelta = candidateRowY - currentRowY;
-            if (moveUp)
-            {
-                if (rowDelta <= 0.01f)
-                {
-                    continue;
-                }
-            }
-            else if (rowDelta >= -0.01f)
-            {
-                continue;
-            }
-
-            if (!TryGetPanelLocalCenter(target.AnchorRect, out var candidateCenter))
-            {
-                continue;
-            }
-
-            var rowDistance = Mathf.Abs(rowDelta);
-            var xDistance = Mathf.Abs(candidateCenter.x - currentCenter.x);
-            var betterRow = rowDistance < bestRowDistance - 0.01f;
-            var betterX = !betterRow && Mathf.Abs(rowDistance - bestRowDistance) <= 0.01f &&
-                          xDistance < bestXDistance - 0.01f;
-            if (!betterRow && !betterX)
-            {
-                continue;
-            }
-
-            bestTarget = target;
-            bestRowDistance = rowDistance;
-            bestXDistance = xDistance;
-        }
-
-        return bestTarget;
-    }
-
-    private static ModMenuSelectable FindVerticalTargetInList(
-        ModMenuSelectable currentTarget, List<ModMenuSelectable> targets, bool moveUp)
-    {
-        if (currentTarget == null || targets == null || targets.Count == 0)
-        {
-            return null;
-        }
-
-        var currentIndex = FindTargetIndex(targets, currentTarget);
-        if (currentIndex < 0)
-        {
-            return moveUp ? GetLastValidTarget(targets) : GetFirstValidTarget(targets);
-        }
-
-        var step = moveUp ? -1 : 1;
-        for (var index = currentIndex + step; index >= 0 && index < targets.Count; index += step)
-        {
-            var candidate = targets[index];
-            if (!IsSelectableTargetValid(candidate))
-            {
-                continue;
-            }
-
-            return candidate;
-        }
-
-        return null;
-    }
-
-    private static ModMenuSelectable FindHorizontalTargetInList(
-        ModMenuSelectable currentTarget, List<ModMenuSelectable> targets, bool moveRight)
-    {
-        if (currentTarget == null || targets == null || targets.Count == 0)
-        {
-            return null;
-        }
-
-        var currentIndex = FindTargetIndex(targets, currentTarget);
-        if (currentIndex < 0)
-        {
-            return moveRight ? GetLastValidTarget(targets) : GetFirstValidTarget(targets);
-        }
-
-        var step = moveRight ? 1 : -1;
-        for (var index = currentIndex + step; index >= 0 && index < targets.Count; index += step)
-        {
-            var candidate = targets[index];
-            if (!IsSelectableTargetValid(candidate))
-            {
-                continue;
-            }
-
-            return candidate;
-        }
-
-        return currentTarget;
-    }
-
-    private static bool IsBoundaryTarget(ModMenuSelectable target,
-        List<ModMenuSelectable> targets, bool moveUp)
-    {
-        if (target == null || targets == null || targets.Count == 0)
-        {
-            return false;
-        }
-
-        var boundaryTarget = moveUp ? GetFirstValidTarget(targets) : GetLastValidTarget(targets);
-        return ReferenceEquals(boundaryTarget, target);
-    }
-
-    private static int FindTargetIndex(List<ModMenuSelectable> targets,
-        ModMenuSelectable target)
-    {
-        if (targets == null || target == null)
-        {
-            return -1;
-        }
-
-        for (var index = 0; index < targets.Count; index++)
-        {
-            if (!ReferenceEquals(targets[index], target))
-            {
-                continue;
-            }
-
-            return index;
-        }
-
-        return -1;
-    }
-
-    private static ModMenuSelectable ResolveTabTargetForCrossPanel()
-    {
-        return GetLastValidTarget(_lastTabTarget, TabNavigationTargets);
-    }
-
-    private static ModMenuSelectable ResolveOptionTargetForCrossPanel()
-    {
-        return GetLastValidTarget(_lastOptionTarget, OptionNavigationTargets);
-    }
-
-    private static ModMenuSelectable ResolveBottomTargetForCrossPanel()
-    {
-        return GetLastValidTarget(_lastBottomTarget, BottomNavigationTargets);
-    }
-
-    private static ModMenuSelectable ResolveReturnFromBottomTarget()
-    {
-        var optionTarget = ResolveOptionTargetForCrossPanel();
-        if (optionTarget != null)
-        {
-            return optionTarget;
-        }
-
-        if (_lastTargetBeforeBottom != null && ResolvePanelType(_lastTargetBeforeBottom) != NavigationPanelType.Bottom &&
-            _lastTargetBeforeBottom.IsValid())
-        {
-            return _lastTargetBeforeBottom;
-        }
-
-        var tabTarget = ResolveTabTargetForCrossPanel();
-        if (tabTarget != null)
-        {
-            return tabTarget;
-        }
-
-        return GetFirstValidTarget(BottomNavigationTargets);
-    }
-
-    private static ModMenuSelectable GetFirstValidTarget(List<ModMenuSelectable> targets)
-    {
-        if (targets == null)
-        {
-            return null;
-        }
-
-        foreach (var target in targets)
-        {
-            if (!IsSelectableTargetValid(target))
-            {
-                continue;
-            }
-
-            return target;
-        }
-
-        return null;
-    }
-
-    private static ModMenuSelectable GetLastValidTarget(List<ModMenuSelectable> targets)
-    {
-        if (targets == null)
-        {
-            return null;
-        }
-
-        for (var index = targets.Count - 1; index >= 0; index--)
-        {
-            var target = targets[index];
-            if (!IsSelectableTargetValid(target))
-            {
-                continue;
-            }
-
-            return target;
-        }
-
-        return null;
-    }
-
-    private static ModMenuSelectable GetLastValidTarget(ModMenuSelectable preferredTarget,
-        List<ModMenuSelectable> targets)
-    {
-        if (targets == null || targets.Count == 0)
-        {
-            return null;
-        }
-
-        if (IsSelectableTargetValid(preferredTarget))
-        {
-            foreach (var target in targets)
-            {
-                if (!ReferenceEquals(target, preferredTarget))
-                {
-                    continue;
-                }
-
-                return preferredTarget;
-            }
-        }
-
-        return GetFirstValidTarget(targets);
-    }
-
-    private static bool IsSelectableTargetValid(ModMenuSelectable target)
-    {
-        return target != null && target.IsValid();
-    }
-
-    private static bool IsSliderNavigationTarget(ModMenuSelectable target)
-    {
-        if (target == null || target.SelectionObject == null)
-        {
-            return false;
-        }
-
-        return target.SelectionObject.GetComponent<Slider>() != null;
+        return yComparison != 0 ? yComparison : leftCenter.x.CompareTo(rightCenter.x);
     }
 
     private static NavigationPanelType ResolvePanelType(ModMenuSelectable target)
@@ -1714,54 +1175,6 @@ internal static class ModMenuController
         return NavigationPanelType.Unknown;
     }
 
-    private static ModMenuSelectable FindBestDirectionalTarget(
-        ModMenuSelectable currentTarget,
-        Vector2 currentCenter,
-        Vector2 normalizedDirection,
-        Func<ModMenuSelectable, bool> filter)
-    {
-        var verticalDirection = Mathf.Abs(normalizedDirection.y) >= Mathf.Abs(normalizedDirection.x);
-        ModMenuSelectable bestTarget = null;
-        var bestScore = float.MaxValue;
-
-        foreach (var target in NavigationTargets)
-        {
-            if (target == null || !target.IsValid() || ReferenceEquals(target, currentTarget))
-            {
-                continue;
-            }
-
-            if (filter != null && !filter(target))
-            {
-                continue;
-            }
-
-            if (!TryGetPanelLocalCenter(target.AnchorRect, out var targetCenter))
-            {
-                continue;
-            }
-
-            var delta = targetCenter - currentCenter;
-            if (Vector2.Dot(delta, normalizedDirection) <= 0.01f)
-            {
-                continue;
-            }
-
-            var primaryDistance = verticalDirection ? Mathf.Abs(delta.y) : Mathf.Abs(delta.x);
-            var lateralDistance = verticalDirection ? Mathf.Abs(delta.x) : Mathf.Abs(delta.y);
-            var score = (primaryDistance * 1000f) + (lateralDistance * 12f) + (delta.sqrMagnitude * 0.05f);
-            if (score >= bestScore)
-            {
-                continue;
-            }
-
-            bestTarget = target;
-            bestScore = score;
-        }
-
-        return bestTarget;
-    }
-
     private static bool IsTopActionNavigationTarget(ModMenuSelectable target)
     {
         if (target == null || target.SelectionObject == null)
@@ -1776,120 +1189,6 @@ internal static class ModMenuController
         }
 
         return _topResetButton != null && selectionObject == _topResetButton.gameObject;
-    }
-
-    private static bool TryHandleSliderDirectionalInput(ModMenuSelectable currentTarget, Vector2 direction)
-    {
-        if (currentTarget == null || Mathf.Abs(direction.x) < 0.5f || Mathf.Abs(direction.y) > 0.5f)
-        {
-            return false;
-        }
-
-        var slider = currentTarget.SelectionObject != null ? currentTarget.SelectionObject.GetComponent<Slider>() : null;
-        if (slider == null || !slider.interactable)
-        {
-            return false;
-        }
-
-        var step = slider.wholeNumbers ? 1f : SliderDirectionalStep;
-        var delta = direction.x > 0f ? step : -step;
-        var nextValue = Mathf.Clamp(slider.value + delta, slider.minValue, slider.maxValue);
-        if (slider.wholeNumbers)
-        {
-            nextValue = Mathf.Round(nextValue);
-        }
-
-        if (Mathf.Abs(nextValue - slider.value) <= 0.0001f)
-        {
-            return true;
-        }
-
-        slider.value = nextValue;
-        return true;
-    }
-
-    private static bool TryFindTargetByGameObject(GameObject gameObject, out ModMenuSelectable target)
-    {
-        if (gameObject == null)
-        {
-            target = null;
-            return false;
-        }
-
-        var directTarget = gameObject.GetComponent<ModMenuSelectable>() ??
-                           gameObject.GetComponentInParent<ModMenuSelectable>();
-        if (directTarget != null)
-        {
-            foreach (var navigationTarget in NavigationTargets)
-            {
-                if (navigationTarget != directTarget)
-                {
-                    continue;
-                }
-
-                target = directTarget;
-                return true;
-            }
-        }
-
-        var selectedTransform = gameObject.transform;
-        foreach (var navigationTarget in NavigationTargets)
-        {
-            if (navigationTarget == null || !navigationTarget.IsValid())
-            {
-                continue;
-            }
-
-            var selectionObject = navigationTarget.SelectionObject;
-            var anchorRect = navigationTarget.AnchorRect;
-            if (selectionObject == null || anchorRect == null)
-            {
-                continue;
-            }
-
-            if (selectionObject == gameObject || anchorRect.gameObject == gameObject)
-            {
-                target = navigationTarget;
-                return true;
-            }
-
-            var selectionTransform = selectionObject.transform;
-            var anchorTransform = anchorRect.transform;
-            if (selectedTransform.IsChildOf(selectionTransform) || selectedTransform.IsChildOf(anchorTransform))
-            {
-                target = navigationTarget;
-                return true;
-            }
-
-            if (selectionTransform.IsChildOf(selectedTransform) || anchorTransform.IsChildOf(selectedTransform))
-            {
-                target = navigationTarget;
-                return true;
-            }
-        }
-
-        target = null;
-        return false;
-    }
-
-    private static bool TryFindTargetBySelectionObject(GameObject selectionObject, out ModMenuSelectable target)
-    {
-        if (selectionObject != null)
-        {
-            foreach (var navigationTarget in NavigationTargets)
-            {
-                if (navigationTarget.SelectionObject != selectionObject)
-                {
-                    continue;
-                }
-
-                target = navigationTarget;
-                return true;
-            }
-        }
-
-        target = null;
-        return false;
     }
 
     private static bool TryGetPanelLocalCenter(RectTransform rectTransform, out Vector2 center)
@@ -1912,303 +1211,9 @@ internal static class ModMenuController
         return true;
     }
 
-    private static void ApplyNavigationSelection(ModMenuSelectable target, bool ensureVisible)
-    {
-        if (target == null || !target.IsValid())
-        {
-            return;
-        }
-
-        var previousTarget = ResolveCurrentNavigationTarget();
-        if (ensureVisible)
-        {
-            EnsureTargetVisible(target);
-        }
-
-        var eventSystem = EventSystem.current;
-        var changedSelection = eventSystem == null || eventSystem.currentSelectedGameObject != target.SelectionObject;
-        if (eventSystem != null && changedSelection)
-        {
-            eventSystem.SetSelectedGameObject(target.SelectionObject);
-        }
-
-        var selectable = target.SelectionObject.GetComponent<Selectable>();
-        if (selectable != null && selectable.IsInteractable() && changedSelection)
-        {
-            selectable.Select();
-        }
-
-        if (ensureVisible)
-        {
-            EnsureTargetVisible(target);
-        }
-
-        TrackPanelSelectionState(target, previousTarget);
-        _lastKnownSelectedObject = target.SelectionObject;
-    }
-
-    private static void TrackPanelSelectionState(ModMenuSelectable selectedTarget,
-        ModMenuSelectable previousTarget)
-    {
-        if (selectedTarget == null)
-        {
-            return;
-        }
-
-        var selectedPanelType = ResolvePanelType(selectedTarget);
-        switch (selectedPanelType)
-        {
-            case NavigationPanelType.Tab:
-                _lastTabTarget = selectedTarget;
-                _lastTargetBeforeBottom = selectedTarget;
-                break;
-            case NavigationPanelType.Options:
-                _lastOptionTarget = selectedTarget;
-                _lastTargetBeforeBottom = selectedTarget;
-                break;
-            case NavigationPanelType.Bottom:
-                _lastBottomTarget = selectedTarget;
-                if (previousTarget == null || !previousTarget.IsValid())
-                {
-                    return;
-                }
-
-                if (ResolvePanelType(previousTarget) == NavigationPanelType.Bottom)
-                {
-                    return;
-                }
-
-                _lastTargetBeforeBottom = previousTarget;
-                break;
-            default:
-                break;
-        }
-    }
-
-    private static void EnsureTargetVisible(ModMenuSelectable target)
-    {
-        if (target == null || target.AnchorRect == null)
-        {
-            return;
-        }
-
-        var scrolled = false;
-        if (target.OwnerPanel != null)
-        {
-            scrolled = target.OwnerPanel.EnsureVisible(target.AnchorRect, ScrollIntoViewPadding);
-        }
-
-        if (scrolled)
-        {
-            return;
-        }
-
-        var ownerScrollRect = ResolveOwnerScrollRect(target.AnchorRect.transform);
-        if (ownerScrollRect == null)
-        {
-            return;
-        }
-
-        EnsureVisibleInScrollRect(ownerScrollRect, target.AnchorRect, ScrollIntoViewPadding);
-    }
-
-    private static ScrollRect ResolveOwnerScrollRect(Transform targetTransform)
-    {
-        if (targetTransform == null)
-        {
-            return null;
-        }
-
-        if (_contentRoot != null && _contentScrollRect != null && targetTransform.IsChildOf(_contentRoot.transform))
-        {
-            return _contentScrollRect;
-        }
-
-        if (_listViewRoot != null && _listScrollRect != null && targetTransform.IsChildOf(_listViewRoot.transform))
-        {
-            return _listScrollRect;
-        }
-
-        return null;
-    }
-
-    private static bool EnsureVisibleInScrollRect(ScrollRect scrollRect, RectTransform targetRect, float padding)
-    {
-        if (scrollRect == null || targetRect == null)
-        {
-            return false;
-        }
-
-        var viewport = scrollRect.viewport;
-        var content = scrollRect.content;
-        if (viewport == null || content == null || !content.gameObject.activeInHierarchy ||
-            !targetRect.gameObject.activeInHierarchy)
-        {
-            return false;
-        }
-
-        LayoutRebuilder.ForceRebuildLayoutImmediate(content);
-        Canvas.ForceUpdateCanvases();
-
-        var viewportMask = viewport.GetComponent<RectMask2D>();
-        var referenceRect = viewportMask != null ? viewportMask.rectTransform : viewport;
-        if (!TryGetVerticalBoundsInSpace(referenceRect, targetRect, out var targetTop, out var targetBottom))
-        {
-            return false;
-        }
-
-        if (!TryGetVerticalBoundsInSpace(referenceRect, referenceRect, out var viewportTopRaw, out var viewportBottomRaw))
-        {
-            return false;
-        }
-
-        var viewportTop = viewportTopRaw - padding;
-        var viewportBottom = viewportBottomRaw + padding;
-        var delta = 0f;
-        if (targetTop > viewportTop)
-        {
-            delta = targetTop - viewportTop;
-        }
-        else if (targetBottom < viewportBottom)
-        {
-            delta = targetBottom - viewportBottom;
-        }
-
-        if (Mathf.Abs(delta) <= 0.01f)
-        {
-            return false;
-        }
-
-        var maxScrollY = ResolveMaxScrollY(content, viewport);
-        if (maxScrollY <= 0.01f)
-        {
-            return false;
-        }
-
-        scrollRect.StopMovement();
-        var contentPosition = content.anchoredPosition;
-        var nextY = Mathf.Clamp(contentPosition.y - delta, 0f, maxScrollY);
-        if (Mathf.Abs(nextY - contentPosition.y) <= 0.01f)
-        {
-            return false;
-        }
-
-        contentPosition.y = nextY;
-        content.anchoredPosition = contentPosition;
-        scrollRect.velocity = Vector2.zero;
-        scrollRect.verticalNormalizedPosition = Mathf.Clamp01(1f - (nextY / maxScrollY));
-        Canvas.ForceUpdateCanvases();
-        return true;
-    }
-
-    private static float ResolveMaxScrollY(RectTransform content, RectTransform viewport)
-    {
-        if (content == null || viewport == null)
-        {
-            return 0f;
-        }
-
-        var contentHeight = content.rect.height;
-        var preferredHeight = Mathf.Max(LayoutUtility.GetPreferredHeight(content), LayoutUtility.GetMinHeight(content));
-        contentHeight = Mathf.Max(contentHeight, preferredHeight, ResolveChildBoundsHeight(content));
-        if (contentHeight > content.rect.height + 0.1f)
-        {
-            content.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, contentHeight);
-        }
-
-        return Mathf.Max(0f, contentHeight - viewport.rect.height);
-    }
-
-    private static bool TryGetVerticalBoundsInSpace(RectTransform referenceRect, RectTransform targetRect, out float top,
-        out float bottom)
-    {
-        top = float.NegativeInfinity;
-        bottom = float.PositiveInfinity;
-        if (referenceRect == null || targetRect == null)
-        {
-            return false;
-        }
-
-        targetRect.GetWorldCorners(VisibilityCornerBuffer);
-        for (var cornerIndex = 0; cornerIndex < VisibilityCornerBuffer.Length; cornerIndex++)
-        {
-            var localPoint = referenceRect.InverseTransformPoint(VisibilityCornerBuffer[cornerIndex]);
-            if (localPoint.y > top)
-            {
-                top = localPoint.y;
-            }
-
-            if (localPoint.y < bottom)
-            {
-                bottom = localPoint.y;
-            }
-        }
-
-        return !float.IsInfinity(top) && !float.IsInfinity(bottom);
-    }
-
-    private static float ResolveChildBoundsHeight(RectTransform parent)
-    {
-        if (parent == null)
-        {
-            return 0f;
-        }
-
-        var minY = float.PositiveInfinity;
-        var maxY = float.NegativeInfinity;
-        var childCount = parent.childCount;
-        for (var childIndex = 0; childIndex < childCount; childIndex++)
-        {
-            var child = parent.GetChild(childIndex).TryCast<RectTransform>();
-            if (child == null || !child.gameObject.activeInHierarchy)
-            {
-                continue;
-            }
-
-            child.GetWorldCorners(VisibilityCornerBuffer);
-            for (var cornerIndex = 0; cornerIndex < VisibilityCornerBuffer.Length; cornerIndex++)
-            {
-                var localPoint = parent.InverseTransformPoint(VisibilityCornerBuffer[cornerIndex]);
-                if (localPoint.y < minY)
-                {
-                    minY = localPoint.y;
-                }
-
-                if (localPoint.y > maxY)
-                {
-                    maxY = localPoint.y;
-                }
-            }
-        }
-
-        if (float.IsInfinity(minY) || float.IsInfinity(maxY))
-        {
-            return 0f;
-        }
-
-        return Mathf.Max(0f, maxY - minY);
-    }
-
-    private static void UpdateNavigatorForTarget(ModMenuSelectable target)
-    {
-        if (_mouseInputMode || target == null || target.AnchorRect == null || _customNavigatorsRoot == null)
-        {
-            _navigatorVisuals?.SetVisible(false);
-            return;
-        }
-
-        if (!_customNavigatorsRoot.activeInHierarchy)
-        {
-            _navigatorVisuals?.SetVisible(false);
-            return;
-        }
-
-        _navigatorVisuals?.UpdateForTarget(target.AnchorRect);
-    }
-
     private static void BuildMenu(Canvas canvas)
     {
-        var rootParent = ResolveMenuRootParent(canvas, _optionsAnchorButton != null ? _optionsAnchorButton.transform : null);
+        var rootParent = ResolveMenuRootParent(canvas, _optionsAnchorButton?.transform);
         var rootRect = ModMenuObjectFactory.CreateRect(MenuRootName, rootParent);
         _menuRoot = rootRect.gameObject;
         _menuGroup = ModMenuObjectFactory.GetOrAddCanvasGroup(_menuRoot);
@@ -2268,14 +1273,14 @@ internal static class ModMenuController
         ConfigureDetailContentRect(optionsPanelRect, tabPanelWidth);
         EnsureOptionsPanelHasNoImage();
 
-        var title = CreateTextObject(panel.transform, "MOD OPTIONS", _textStyle, _textStyle.fontSize + 10f,
+        var title = CreateTextObject(panel.transform, "MOD OPTIONS", _textStyle, _textStyle.FontSize + 10f,
             TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
         title.name = "MenuTitle";
         _titleObject = title;
         var titleRect = title.GetComponent<RectTransform>();
         ConfigureOptionsPanelTitleRect(titleRect, panelWidth, tabPanelWidth);
 
-        var subtitle = CreateTextObject(title.transform, "SELECT A MOD", _textStyle, _textStyle.fontSize + 2f,
+        var subtitle = CreateTextObject(title.transform, "SELECT A MOD", _textStyle, _textStyle.FontSize + 2f,
             TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
         subtitle.name = "MenuSubtitle";
         _subtitleObject = subtitle;
@@ -2310,9 +1315,7 @@ internal static class ModMenuController
 
     private static void BuildMenu(Canvas canvas, Transform optionsButtonTransform)
     {
-        _optionsAnchorButton = _optionsAnchorButton ?? (optionsButtonTransform != null
-            ? optionsButtonTransform.GetComponent<Button>()
-            : null);
+        _optionsAnchorButton ??= optionsButtonTransform?.GetComponent<Button>();
         BuildMenu(canvas);
     }
 
@@ -2387,7 +1390,7 @@ internal static class ModMenuController
         }
 
         ClearChildren(_listRoot.transform);
-        EntryButtons.Clear();
+        _entryButtons.Clear();
 
         var entries = ModMenuRegistry.GetEntries();
         if (entries == null || entries.Count == 0)
@@ -2407,7 +1410,7 @@ internal static class ModMenuController
         foreach (var entry in sorted)
         {
             var button = CreateButton(_listRoot.transform, $"ModButton_{entry.Id}", entry.DisplayName,
-                Gray, LightGray, Blue, Dark);
+                _gray, _lightGray, _blue, _dark);
             if (button == null)
             {
                 continue;
@@ -2415,22 +1418,28 @@ internal static class ModMenuController
 
             var layout = ModMenuObjectFactory.GetOrAddLayoutElement(button.gameObject);
             layout.ignoreLayout = false;
-            layout.preferredHeight = 56f;
-            layout.minHeight = 56f;
+            layout.preferredWidth = TabButtonWidth;
+            layout.minWidth = TabButtonWidth;
+            layout.preferredHeight = TabButtonHeight;
+            layout.minHeight = TabButtonHeight;
+            layout.flexibleWidth = 0f;
+            layout.flexibleHeight = 0f;
 
             var buttonRect = button.GetComponent<RectTransform>();
             if (buttonRect != null)
             {
-                buttonRect.anchorMin = new Vector2(0f, 1f);
-                buttonRect.anchorMax = new Vector2(1f, 1f);
+                buttonRect.anchorMin = new Vector2(0.5f, 1f);
+                buttonRect.anchorMax = new Vector2(0.5f, 1f);
                 buttonRect.pivot = new Vector2(0.5f, 1f);
+                buttonRect.sizeDelta = new Vector2(TabButtonWidth, TabButtonHeight);
                 buttonRect.localScale = Vector3.one;
             }
 
+            ApplyEntryTabButtonSprite(button, entry);
             ConfigureTabPanelButtonText(button);
 
             var entryId = entry.Id;
-            EntryButtons[entryId] = button;
+            _entryButtons[entryId] = button;
             AddClickListener(button, () => OpenModEntry(entryId));
         }
 
@@ -2473,7 +1482,7 @@ internal static class ModMenuController
 
     private static void RebuildModOptionsCache()
     {
-        ModOptionsById.Clear();
+        _modOptionsById.Clear();
         var modOptions = ModMenuRegistry.GetModOptionsById();
         if (modOptions == null || modOptions.Count == 0)
         {
@@ -2488,17 +1497,9 @@ internal static class ModMenuController
             }
 
             var sectionBuilders = new List<Action<ModMenuBuilder>>(pair.Value.Count);
-            foreach (var sectionBuilder in pair.Value)
-            {
-                if (sectionBuilder == null)
-                {
-                    continue;
-                }
+            sectionBuilders.AddRange(pair.Value.Where(sectionBuilder => sectionBuilder != null));
 
-                sectionBuilders.Add(sectionBuilder);
-            }
-
-            ModOptionsById[pair.Key] = sectionBuilders;
+            _modOptionsById[pair.Key] = sectionBuilders;
         }
     }
 
@@ -2518,7 +1519,7 @@ internal static class ModMenuController
 
         ClearChildren(pageRect.transform);
         var builder = new ModMenuBuilder(pageRect, _textStyle, AddClickListener);
-        if (!ModOptionsById.TryGetValue(entryId, out var sectionBuilders) || sectionBuilders == null ||
+        if (!_modOptionsById.TryGetValue(entryId, out var sectionBuilders) || sectionBuilders == null ||
             sectionBuilders.Count == 0)
         {
             builder.AddLabel("No options registered.");
@@ -2526,20 +1527,16 @@ internal static class ModMenuController
             return;
         }
 
-        foreach (var sectionBuilder in sectionBuilders)
+        foreach (var sectionBuilder in sectionBuilders.Where(sectionBuilder => sectionBuilder != null))
         {
-            if (sectionBuilder == null)
-            {
-                continue;
-            }
-
             try
             {
                 sectionBuilder(builder);
             }
             catch (Exception exception)
             {
-                MelonLogger.Error($"[SurvivorModMenu] Failed to build options for '{entryId}': {exception}");
+                MelonLogger.Error(
+                    $"[SurvivorModMenu] Failed to build options for '{entryId}': {exception}");
             }
         }
 
@@ -2646,23 +1643,16 @@ internal static class ModMenuController
             overlayObjects.Add(child.gameObject);
         }
 
-        foreach (var overlay in overlayObjects)
+        foreach (var overlay in overlayObjects.Where(overlay => overlay != null))
         {
-            if (overlay == null)
-            {
-                continue;
-            }
-
             UnityEngine.Object.Destroy(overlay);
         }
     }
 
     private static void UpdateEntryButtonStyles()
     {
-        foreach (var kvp in EntryButtons)
+        foreach (var (entryId, button) in _entryButtons)
         {
-            var entryId = kvp.Key;
-            var button = kvp.Value;
             if (button == null)
             {
                 continue;
@@ -2670,9 +1660,9 @@ internal static class ModMenuController
 
             var selected = !string.IsNullOrWhiteSpace(_selectedEntryId) &&
                            entryId.Equals(_selectedEntryId, StringComparison.OrdinalIgnoreCase);
-            var normal = selected ? Blue : Gray;
-            var pressed = selected ? Green : Blue;
-            ApplyButtonStyle(button, normal, LightGray, pressed, Dark);
+            var normal = selected ? _blue : _gray;
+            var pressed = selected ? _green : _blue;
+            ApplyButtonStyle(button, normal, _lightGray, pressed, _dark);
         }
     }
 
@@ -2692,12 +1682,7 @@ internal static class ModMenuController
         }
 
         var order = left.SortOrder.CompareTo(right.SortOrder);
-        if (order != 0)
-        {
-            return order;
-        }
-
-        return string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
+        return order != 0 ? order : string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void CreateEmptyListLabel()
@@ -2709,7 +1694,7 @@ internal static class ModMenuController
         layout.preferredHeight = 56f;
         layout.minHeight = 56f;
 
-        var label = CreateTextObject(row.transform, "No mods registered.", _textStyle, _textStyle.fontSize + 2f,
+        var label = CreateTextObject(row.transform, "No mods registered.", _textStyle, _textStyle.FontSize + 2f,
             TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
         StretchToParent(label.GetComponent<RectTransform>());
 
@@ -2773,7 +1758,7 @@ internal static class ModMenuController
         }
 
         var leftOffset = ResolveDetailLeftOffset(tabPanelWidth);
-        var rightOffset = ContentSidePadding + ScrollbarWidth + ScrollbarEdgePadding;
+        const float rightOffset = ContentSidePadding + ScrollbarWidth + ScrollbarEdgePadding;
         var width = Mathf.Max(120f, panelWidth - leftOffset - rightOffset);
         rect.anchorMin = new Vector2(0.5f, 0.5f);
         rect.anchorMax = new Vector2(0.5f, 0.5f);
@@ -2794,7 +1779,7 @@ internal static class ModMenuController
         rect.anchorMin = new Vector2(0.5f, 1f);
         rect.anchorMax = new Vector2(0.5f, 1f);
         rect.pivot = new Vector2(0.5f, 1f);
-        rect.anchoredPosition = new Vector2(10f, -28f);
+        rect.anchoredPosition = new Vector2(65f, -28f);
         rect.sizeDelta = new Vector2(availableWidth, 60f);
     }
 
@@ -2911,11 +1896,13 @@ internal static class ModMenuController
         contentRect.anchoredPosition = Vector2.zero;
         contentRect.sizeDelta = Vector2.zero;
 
-        if (viewportRect != null)
+        if (viewportRect == null)
         {
-            viewportRect.offsetMin = new Vector2(TopPanelContentPadding, TopPanelContentPadding);
-            viewportRect.offsetMax = new Vector2(-TopPanelContentPadding, -TopPanelContentPadding);
+            return root;
         }
+
+        viewportRect.offsetMin = new Vector2(TopPanelContentPadding, TopPanelContentPadding);
+        viewportRect.offsetMax = new Vector2(-TopPanelContentPadding, -TopPanelContentPadding);
 
         return root;
     }
@@ -2930,7 +1917,7 @@ internal static class ModMenuController
         scrollbarRect.offsetMax = new Vector2(-ScrollbarEdgePadding, -ContentTopPadding);
 
         ApplyRoundedImage(trackImage);
-        trackImage.color = TrackbarDarkGray;
+        trackImage.color = _trackbarDarkGray;
         trackImage.raycastTarget = true;
 
         scrollbar.direction = Scrollbar.Direction.BottomToTop;
@@ -2974,15 +1961,12 @@ internal static class ModMenuController
 
         var layoutGroup = rect.GetComponent<VerticalLayoutGroup>() ?? ModMenuObjectFactory.GetOrAddVerticalLayoutGroup(rect.gameObject);
         layoutGroup.childAlignment = TextAnchor.UpperCenter;
-        layoutGroup.childControlWidth = true;
-        layoutGroup.childForceExpandWidth = true;
+        layoutGroup.childControlWidth = false;
+        layoutGroup.childForceExpandWidth = false;
         layoutGroup.childControlHeight = false;
         layoutGroup.childForceExpandHeight = false;
         layoutGroup.spacing = 10f;
-        var listInnerReduction = TabPanelInnerPadding * 2f;
-        var sideInset = Mathf.Max(0f, (TabButtonWidthReduction - listInnerReduction) * 0.5f);
-        var sideInsetInt = Mathf.RoundToInt(sideInset);
-        layoutGroup.padding = new RectOffset(sideInsetInt, sideInsetInt, 0, 0);
+        layoutGroup.padding = new RectOffset(0, 0, 0, 0);
 
         var fitter = rect.GetComponent<ContentSizeFitter>() ?? ModMenuObjectFactory.GetOrAddContentSizeFitter(rect.gameObject);
         fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -3014,11 +1998,7 @@ internal static class ModMenuController
             _menuGroup = _menuRoot.GetComponent<CanvasGroup>();
         }
 
-        var panel = _menuRoot.transform.Find("Panel");
-        if (panel == null)
-        {
-            panel = _menuRoot.transform.Find("BackDrop/Panel");
-        }
+        var panel = _menuRoot.transform.Find("Panel") ?? _menuRoot.transform.Find("BackDrop/Panel");
 
         if (panel != null)
         {
@@ -3030,11 +2010,8 @@ internal static class ModMenuController
             return;
         }
 
-        var customNavigators = _menuRoot.transform.Find(CustomNavigatorsRootName);
-        if (customNavigators == null)
-        {
-            customNavigators = _panelRoot.transform.Find(CustomNavigatorsRootName);
-        }
+        var customNavigators = _menuRoot.transform.Find(CustomNavigatorsRootName) ??
+                               _panelRoot.transform.Find(CustomNavigatorsRootName);
 
         _customNavigatorsRoot = customNavigators != null ? customNavigators.gameObject : _customNavigatorsRoot;
         EnsureCustomNavigators();
@@ -3050,9 +2027,9 @@ internal static class ModMenuController
         _topPanelRoot = topPanel != null ? topPanel.gameObject : _topPanelRoot;
         EnsureBottomPanelHasNoImage();
 
-        var topButtons = _topPanelRoot != null ? _topPanelRoot.transform.Find(TopButtonsRootName) : null;
+        var topButtons = _topPanelRoot?.transform.Find(TopButtonsRootName);
         _topButtonsRoot = topButtons != null ? topButtons.gameObject : _topButtonsRoot;
-        var topButtonsContent = _topPanelRoot != null ? _topPanelRoot.transform.Find($"{TopButtonsRootName}/Viewport/Content") : null;
+        var topButtonsContent = _topPanelRoot?.transform.Find($"{TopButtonsRootName}/Viewport/Content");
         _topButtonsContentRoot = topButtonsContent != null ? topButtonsContent.gameObject : _topButtonsContentRoot;
         _topButtonsScrollRect = _topButtonsRoot != null ? _topButtonsRoot.GetComponent<ScrollRect>() : _topButtonsScrollRect;
 
@@ -3099,19 +2076,13 @@ internal static class ModMenuController
             _contentScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
         }
 
-        var title = _panelRoot.transform.Find("MenuTitle");
-        if (title == null)
-        {
-            title = _panelRoot.transform.Find($"{OptionsPanelName}/MenuTitle");
-        }
+        var title = _panelRoot.transform.Find("MenuTitle") ??
+                    _panelRoot.transform.Find($"{OptionsPanelName}/MenuTitle");
 
         _titleObject = title != null ? title.gameObject : _titleObject;
 
-        var subtitle = _panelRoot.transform.Find("MenuSubtitle");
-        if (subtitle == null)
-        {
-            subtitle = _panelRoot.transform.Find($"{OptionsPanelName}/MenuTitle/MenuSubtitle");
-        }
+        var subtitle = _panelRoot.transform.Find("MenuSubtitle") ??
+                       _panelRoot.transform.Find($"{OptionsPanelName}/MenuTitle/MenuSubtitle");
 
         _subtitleObject = subtitle != null ? subtitle.gameObject : _subtitleObject;
 
@@ -3220,7 +2191,7 @@ internal static class ModMenuController
             _topBackButton = CloneButtonFromTemplate(_optionsAnchorButton, parent, TopBackButtonName);
             if (_topBackButton == null)
             {
-                _topBackButton = CreateButton(parent, TopBackButtonName, "BACK", Gray, LightGray, Blue, Dark);
+                _topBackButton = CreateButton(parent, TopBackButtonName, "BACK", _gray, _lightGray, _blue, _dark);
             }
 
             ConfigureTopPanelButtonLayout(_topBackButton);
@@ -3231,7 +2202,7 @@ internal static class ModMenuController
             _topResetButton = CloneButtonFromTemplate(_optionsAnchorButton, parent, TopResetButtonName);
             if (_topResetButton == null)
             {
-                _topResetButton = CreateButton(parent, TopResetButtonName, "RESET GAME", Red, LightGray, Blue, Dark);
+                _topResetButton = CreateButton(parent, TopResetButtonName, "RESET GAME", _red, _lightGray, _blue, _dark);
             }
 
             ConfigureTopPanelButtonLayout(_topResetButton);
@@ -3292,36 +2263,12 @@ internal static class ModMenuController
 
     private static float ResolveTopButtonWidth()
     {
-        var anchorRect = _optionsAnchorButton != null ? _optionsAnchorButton.GetComponent<RectTransform>() : null;
-        if (anchorRect == null)
-        {
-            return TopButtonMinWidth;
-        }
-
-        var width = anchorRect.rect.width > 0.1f ? anchorRect.rect.width : anchorRect.sizeDelta.x;
-        if (width <= 0.1f)
-        {
-            return TopButtonMinWidth;
-        }
-
-        return Mathf.Max(TopButtonMinWidth, width);
+        return TopButtonWidth;
     }
 
     private static float ResolveTopButtonHeight()
     {
-        var anchorRect = _optionsAnchorButton != null ? _optionsAnchorButton.GetComponent<RectTransform>() : null;
-        if (anchorRect == null)
-        {
-            return TopButtonMinHeight;
-        }
-
-        var height = anchorRect.rect.height > 0.1f ? anchorRect.rect.height : anchorRect.sizeDelta.y;
-        if (height <= 0.1f)
-        {
-            return TopButtonMinHeight;
-        }
-
-        return Mathf.Max(TopButtonMinHeight, height);
+        return TopButtonHeight;
     }
 
     private static void SyncTopButtonsInTopPanel()
@@ -3382,10 +2329,10 @@ internal static class ModMenuController
         {
             var rect = tmpText.rectTransform;
             var id = rect.GetInstanceID();
-            if (!LabelBaseY.TryGetValue(id, out var baseY))
+            if (!_labelBaseY.TryGetValue(id, out var baseY))
             {
                 baseY = rect.anchoredPosition.y;
-                LabelBaseY[id] = baseY;
+                _labelBaseY[id] = baseY;
             }
 
             rect.anchoredPosition = new Vector2(rect.anchoredPosition.x, baseY + yOffset);
@@ -3400,10 +2347,10 @@ internal static class ModMenuController
 
         var uiRect = uiText.rectTransform;
         var uiId = uiRect.GetInstanceID();
-        if (!LabelBaseY.TryGetValue(uiId, out var uiBaseY))
+        if (!_labelBaseY.TryGetValue(uiId, out var uiBaseY))
         {
             uiBaseY = uiRect.anchoredPosition.y;
-            LabelBaseY[uiId] = uiBaseY;
+            _labelBaseY[uiId] = uiBaseY;
         }
 
         uiRect.anchoredPosition = new Vector2(uiRect.anchoredPosition.x, uiBaseY + yOffset);
@@ -3415,6 +2362,12 @@ internal static class ModMenuController
         {
             ResetUiState();
             Time.timeScale = 1f;
+            if (TryLoadPreloaderScene())
+            {
+                Resources.UnloadUnusedAssets();
+                GC.Collect();
+                return;
+            }
 
             const int targetIndex = 0;
             var sceneCount = SceneManager.sceneCountInBuildSettings;
@@ -3438,6 +2391,40 @@ internal static class ModMenuController
         {
             // ignored
         }
+    }
+
+    private static bool TryLoadPreloaderScene()
+    {
+        return TryLoadSceneByName("Preloader") || TryLoadSceneByName("Preloader Scene");
+    }
+
+    private static bool TryLoadSceneByName(string sceneName)
+    {
+        if (string.IsNullOrWhiteSpace(sceneName))
+        {
+            return false;
+        }
+
+        var sceneCount = SceneManager.sceneCountInBuildSettings;
+        for (var sceneIndex = 0; sceneIndex < sceneCount; sceneIndex++)
+        {
+            var scenePath = SceneUtility.GetScenePathByBuildIndex(sceneIndex);
+            if (string.IsNullOrWhiteSpace(scenePath))
+            {
+                continue;
+            }
+
+            var buildSceneName = Path.GetFileNameWithoutExtension(scenePath);
+            if (!string.Equals(buildSceneName, sceneName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            SceneManager.LoadScene(sceneIndex, LoadSceneMode.Single);
+            return true;
+        }
+
+        return false;
     }
 
     private static void ResetUiState()
@@ -3480,26 +2467,16 @@ internal static class ModMenuController
         _optionsWasActive = false;
         _modWasActive = false;
         _selectedEntryId = null;
-        _lastKnownSelectedObject = null;
-        _lastMouseSelectedObject = null;
-        _lastMousePosition = Vector2.zero;
-        _mouseInputMode = false;
-        _nextDirectionalInputTime = 0f;
         _nextScanTime = 0f;
-        _lastTabTarget = null;
-        _lastOptionTarget = null;
-        _lastBottomTarget = null;
-        _lastTargetBeforeBottom = null;
-        ModOptionsById.Clear();
-        EntryButtons.Clear();
-        LabelBaseY.Clear();
-        NavigationTargets.Clear();
-        TabNavigationTargets.Clear();
-        OptionNavigationTargets.Clear();
-        BottomNavigationTargets.Clear();
-        OptionTargetOwners.Clear();
-        MainOptionObjectsById.Clear();
-        MainOptionObjects.Clear();
+        _enterCoopButtonRect = null;
+        _nextEnterCoopResolveTime = 0f;
+        _modOptionsById.Clear();
+        _entryButtons.Clear();
+        _labelBaseY.Clear();
+        _navigationTargets.Clear();
+        _bottomNavigationTargets.Clear();
+        _mainOptionObjectsById.Clear();
+        _mainOptionObjects.Clear();
     }
 
     private static void DestroyUiObjects()
@@ -3672,12 +2649,7 @@ internal static class ModMenuController
         }
 
         var sceneSafeArea = FindSceneObjectByName(SafeAreaName);
-        if (sceneSafeArea != null)
-        {
-            return sceneSafeArea.transform;
-        }
-
-        return canvas != null ? canvas.transform : null;
+        return sceneSafeArea != null ? sceneSafeArea.transform : canvas?.transform;
     }
 
     private static Transform FindAncestorByName(Transform start, string objectName)
@@ -3815,7 +2787,7 @@ internal static class ModMenuController
             }
 
             var type = component.GetType();
-            if (type == null || !string.Equals(type.FullName, typeName, StringComparison.Ordinal))
+            if (!string.Equals(type.FullName, typeName, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -3871,37 +2843,7 @@ internal static class ModMenuController
 
     private static Button FindButtonByLabel(string label, string nameToken)
     {
-        foreach (var button in Resources.FindObjectsOfTypeAll<Button>())
-        {
-            if (!IsSceneObject(button) || button.gameObject == null)
-            {
-                continue;
-            }
-
-            if (button.gameObject.name == ModButtonName)
-            {
-                continue;
-            }
-
-            if (!button.gameObject.activeInHierarchy)
-            {
-                continue;
-            }
-
-            var buttonText = GetButtonText(button.gameObject);
-            var textMatches = !string.IsNullOrEmpty(buttonText) &&
-                              buttonText.Trim().Equals(label, StringComparison.OrdinalIgnoreCase);
-            var nameMatches = !string.IsNullOrEmpty(nameToken) &&
-                              button.name.Contains(nameToken, StringComparison.OrdinalIgnoreCase);
-            if (!textMatches && !nameMatches)
-            {
-                continue;
-            }
-
-            return button;
-        }
-
-        return null;
+        return (from button in Resources.FindObjectsOfTypeAll<Button>() where IsSceneObject(button) && button.gameObject != null where button.gameObject.name != ModButtonName where button.gameObject.activeInHierarchy let buttonText = GetButtonText(button.gameObject) let textMatches = !string.IsNullOrEmpty(buttonText) && buttonText.Trim().Equals(label, StringComparison.OrdinalIgnoreCase) let nameMatches = !string.IsNullOrEmpty(nameToken) && button.name.Contains(nameToken, StringComparison.OrdinalIgnoreCase) where textMatches || nameMatches select button).FirstOrDefault();
     }
 
     private static bool IsSceneObject(Component component)
@@ -4005,23 +2947,19 @@ internal static class ModMenuController
                 var dx = 0f;
                 var dy = 0f;
 
-                if (x < radius)
+                dx = x switch
                 {
-                    dx = radius - x;
-                }
-                else if (x > size - radius - 1)
-                {
-                    dx = x - (size - radius - 1);
-                }
+                    < radius => radius - x,
+                    > size - radius - 1 => x - (size - radius - 1),
+                    _ => dx
+                };
 
-                if (y < radius)
+                dy = y switch
                 {
-                    dy = radius - y;
-                }
-                else if (y > size - radius - 1)
-                {
-                    dy = y - (size - radius - 1);
-                }
+                    < radius => radius - y,
+                    > size - radius - 1 => y - (size - radius - 1),
+                    _ => dy
+                };
 
                 var index = (y * size) + x;
                 var outside = (dx * dx) + (dy * dy) > radius * radius;
@@ -4094,6 +3032,50 @@ internal static class ModMenuController
         button.colors = colors;
     }
 
+    private static void ApplyEntryTabButtonSprite(Button button, ModMenuEntry entry)
+    {
+        if (button == null || entry == null)
+        {
+            return;
+        }
+
+        var sprite = ResolveTabButtonSprite(entry);
+        if (sprite == null)
+        {
+            return;
+        }
+
+        var image = button.GetComponent<Image>();
+        if (image == null)
+        {
+            return;
+        }
+
+        image.sprite = sprite;
+        image.type = Image.Type.Sliced;
+        image.preserveAspect = false;
+        image.color = Color.white;
+
+        var colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(0.94f, 0.94f, 0.94f, 1f);
+        colors.pressedColor = new Color(0.82f, 0.82f, 0.82f, 1f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.disabledColor = new Color(0.65f, 0.65f, 0.65f, 1f);
+        colors.colorMultiplier = 1f;
+        button.colors = colors;
+    }
+
+    private static Sprite ResolveTabButtonSprite(ModMenuEntry entry)
+    {
+        if (entry == null)
+        {
+            return null;
+        }
+
+        return entry.TabButtonSprite != null ? entry.TabButtonSprite : GetUiSprite(entry.TabButtonSpriteName);
+    }
+
     private static void SetImageMemberFloat(Image image, string memberName, float value)
     {
         if (image == null || string.IsNullOrWhiteSpace(memberName))
@@ -4127,7 +3109,7 @@ internal static class ModMenuController
             return null;
         }
 
-        if (UiSpriteCache.TryGetValue(spriteName, out var cached))
+        if (_uiSpriteCache.TryGetValue(spriteName, out var cached))
         {
             return cached;
         }
@@ -4142,7 +3124,7 @@ internal static class ModMenuController
             sprite = null;
         }
 
-        UiSpriteCache[spriteName] = sprite;
+        _uiSpriteCache[spriteName] = sprite;
         return sprite;
     }
 
@@ -4159,7 +3141,7 @@ internal static class ModMenuController
         }
 
         var textObject = CreateTextObject(button.transform, label, _textStyle,
-            _textStyle.fontSize, TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
+            _textStyle.FontSize, TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
         var rect = textObject.GetComponent<RectTransform>();
         rect.anchorMin = Vector2.zero;
         rect.anchorMax = Vector2.one;
@@ -4177,7 +3159,7 @@ internal static class ModMenuController
         var tmpText = button.GetComponentInChildren<TextMeshProUGUI>(true);
         if (tmpText != null)
         {
-            var maxSize = _textStyle.fontSize > 0f ? _textStyle.fontSize : tmpText.fontSize;
+            var maxSize = _textStyle.FontSize > 0f ? _textStyle.FontSize : tmpText.fontSize;
             var minSize = Mathf.Min(maxSize, Mathf.Max(TabButtonMinFontSize, maxSize * 0.45f));
 
             tmpText.enableWordWrapping = true;
@@ -4197,7 +3179,7 @@ internal static class ModMenuController
             return;
         }
 
-        var maxSizeInt = _textStyle.fontSize > 0f ? Mathf.RoundToInt(_textStyle.fontSize) : uiText.fontSize;
+        var maxSizeInt = _textStyle.FontSize > 0f ? Mathf.RoundToInt(_textStyle.FontSize) : uiText.fontSize;
         var minSizeInt = Mathf.RoundToInt(Mathf.Min(maxSizeInt, Mathf.Max(TabButtonMinFontSize, maxSizeInt * 0.45f)));
 
         uiText.alignment = TextAnchor.MiddleCenter;
@@ -4253,13 +3235,13 @@ internal static class ModMenuController
     private static GameObject CreateTextObject(Transform parent, string text, ModMenuTextStyle template,
         float fontSize, TextAnchor uiAlignment, TextAlignmentOptions tmpAlignment)
     {
-        if (template.isTmp && template.tmpFont != null)
+        if (template.IsTmp && template.TMPFont != null)
         {
             var tmp = ModMenuObjectFactory.CreateTmpText("Text", parent, out _);
             var tmpTextObject = tmp.gameObject;
-            tmp.font = template.tmpFont;
+            tmp.font = template.TMPFont;
             tmp.fontSize = fontSize;
-            tmp.color = template.color;
+            tmp.color = template.Color;
             tmp.alignment = tmpAlignment;
             tmp.enableWordWrapping = false;
             tmp.SetText(text);
@@ -4270,9 +3252,9 @@ internal static class ModMenuController
         var rect = ModMenuObjectFactory.CreateRect("Text", parent);
         var textObject = rect.gameObject;
         var uiText = textObject.AddComponent<Text>();
-        uiText.font = template.uiFont;
+        uiText.font = template.UIFont;
         uiText.fontSize = Mathf.RoundToInt(fontSize);
-        uiText.color = template.color;
+        uiText.color = template.Color;
         uiText.alignment = uiAlignment;
         uiText.text = text;
         uiText.raycastTarget = false;
@@ -4287,11 +3269,11 @@ internal static class ModMenuController
         {
             return new ModMenuTextStyle
             {
-                isTmp = true,
-                tmpFont = tmpText.font,
-                uiFont = null,
-                fontSize = tmpText.fontSize,
-                color = tmpText.color
+                IsTmp = true,
+                TMPFont = tmpText.font,
+                UIFont = null,
+                FontSize = tmpText.fontSize,
+                Color = tmpText.color
             };
         }
 
@@ -4300,21 +3282,21 @@ internal static class ModMenuController
         {
             return new ModMenuTextStyle
             {
-                isTmp = false,
-                tmpFont = null,
-                uiFont = uiText.font,
-                fontSize = uiText.fontSize,
-                color = uiText.color
+                IsTmp = false,
+                TMPFont = null,
+                UIFont = uiText.font,
+                FontSize = uiText.fontSize,
+                Color = uiText.color
             };
         }
 
         return new ModMenuTextStyle
         {
-            isTmp = false,
-            tmpFont = null,
-            uiFont = Resources.GetBuiltinResource<Font>("Arial.ttf"),
-            fontSize = 24f,
-            color = Color.white
+            IsTmp = false,
+            TMPFont = null,
+            UIFont = Resources.GetBuiltinResource<Font>("Arial.ttf"),
+            FontSize = 24f,
+            Color = Color.white
         };
     }
 }

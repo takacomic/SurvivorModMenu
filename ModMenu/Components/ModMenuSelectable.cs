@@ -1,6 +1,9 @@
 
 namespace SurvivorModMenu.ModMenu.Components;
 
+/// <summary>
+/// Metadata attached to every selectable object registered with mod menu navigation.
+/// </summary>
 [RegisterTypeInIl2Cpp]
 public sealed class ModMenuSelectable : MonoBehaviour
 {
@@ -8,40 +11,40 @@ public sealed class ModMenuSelectable : MonoBehaviour
     {
     }
 
-    private RectTransform _anchorRect;
-    private ModMenuPanel _ownerPanel;
-    private bool _isOptionObject;
+    [HideFromIl2Cpp]
+    internal RectTransform AnchorRect { get; private set; }
 
-    internal RectTransform AnchorRect => _anchorRect;
-    internal ModMenuPanel OwnerPanel => _ownerPanel;
-    internal bool IsOptionObject => _isOptionObject;
+    [HideFromIl2Cpp]
+    internal ModMenuPanel OwnerPanel { get; private set; }
+
+    [HideFromIl2Cpp]
+    internal bool IsOptionObject { get; private set; }
+
+    [HideFromIl2Cpp]
     internal GameObject SelectionObject => gameObject;
 
+    [HideFromIl2Cpp]
     internal void Configure(RectTransform anchorRect, ModMenuPanel ownerPanel, bool isOptionObject)
     {
-        _anchorRect = anchorRect;
-        _ownerPanel = ownerPanel;
-        _isOptionObject = isOptionObject;
+        AnchorRect = anchorRect;
+        OwnerPanel = ownerPanel;
+        IsOptionObject = isOptionObject;
     }
 
+    [HideFromIl2Cpp]
     internal bool IsValid()
     {
-        if (SelectionObject == null || _anchorRect == null)
+        if (SelectionObject == null || AnchorRect == null)
         {
             return false;
         }
 
-        if (!SelectionObject.activeInHierarchy || !_anchorRect.gameObject.activeInHierarchy)
+        if (!SelectionObject.activeInHierarchy || !AnchorRect.gameObject.activeInHierarchy)
         {
             return false;
         }
 
         var selectable = SelectionObject.GetComponent<Selectable>();
-        if (selectable == null)
-        {
-            return true;
-        }
-
-        return selectable.IsInteractable();
+        return selectable == null || selectable.IsInteractable();
     }
 }

@@ -1,12 +1,12 @@
 #if DEBUG
 using SurvivorModMenu.ModMenu;
 
-namespace SurvivorModMenu.Debugging;
+namespace SurvivorModMenu.Debug;
 
 internal static class DebugTestSettings
 {
     private const string ModId = "SurvivorModMenu.Debug";
-    private static readonly string[] DropdownOptions =
+    private static readonly string[] _dropdownOptions =
     {
         "Alpha",
         "Beta",
@@ -60,7 +60,7 @@ internal static class DebugTestSettings
         builder.AddIntField("Int Test", () => _intValue, value => _intValue = value, 0, 100);
         builder.AddFloatField("Float Test", () => _floatValue, value => _floatValue = value, -2f, 2f);
         builder.AddDoubleField("Double Test", () => _doubleValue, value => _doubleValue = value, -10d, 10d);
-        builder.AddDropdown("Dropdown Test", DropdownOptions, () => _dropdownIndex, value => _dropdownIndex = value);
+        builder.AddDropdown("Dropdown Test", _dropdownOptions, () => _dropdownIndex, value => _dropdownIndex = value);
 
         builder.AddSpacer(8f);
 
@@ -73,7 +73,7 @@ internal static class DebugTestSettings
         builder.AddButton("Test Button (Logs)", () =>
         {
             _buttonClicks++;
-            var selected = DropdownOptions[ClampIndex(_dropdownIndex, DropdownOptions.Length)];
+            var selected = _dropdownOptions[ClampIndex(_dropdownIndex, _dropdownOptions.Length)];
             MelonLogger.Msg(
                 $"[SurvivorModMenu.Debug] clicks={_buttonClicks}, toggle={_toggleEnabled}, text=\"{_textValue}\", int={_intValue}, float={_floatValue:0.##}, double={_doubleValue:0.##}, intSlider={_intSliderValue}, floatSlider={_floatSliderValue:0.##}, doubleSlider={_doubleSliderValue:0.##}, dropdown={selected}");
         });

@@ -1,4 +1,3 @@
-using System.Linq;
 
 namespace SurvivorModMenu.ModMenu;
 
@@ -8,7 +7,7 @@ namespace SurvivorModMenu.ModMenu;
 public static class ModMenuRegistry
 {
     private const string PrimarySectionId = "__primary";
-    private static readonly List<ModMenuEntry> Entries = new();
+    private static readonly List<ModMenuEntry> _entries = new();
     internal static int Version { get; private set; }
 
     /// <summary>
@@ -21,6 +20,34 @@ public static class ModMenuRegistry
     public static void Register(string id, string displayName, Action<ModMenuBuilder> build, int sortOrder = 0)
     {
         RegisterSection(id, displayName, PrimarySectionId, build, sortOrder);
+    }
+
+    /// <summary>
+    /// Registers or replaces a primary settings page for a mod using a custom tab button sprite.
+    /// </summary>
+    /// <param name="id">Stable unique mod identifier.</param>
+    /// <param name="displayName">Display name shown in the mod list.</param>
+    /// <param name="build">Callback that populates menu controls for the mod.</param>
+    /// <param name="sortOrder">Sort priority; lower values appear first.</param>
+    /// <param name="tabButtonSprite">Sprite used for the tab button background.</param>
+    public static void Register(string id, string displayName, Action<ModMenuBuilder> build, int sortOrder,
+        Sprite tabButtonSprite)
+    {
+        RegisterSection(id, displayName, PrimarySectionId, build, sortOrder, tabButtonSprite);
+    }
+
+    /// <summary>
+    /// Registers or replaces a primary settings page for a mod using a sprite loaded by SpriteManager.
+    /// </summary>
+    /// <param name="id">Stable unique mod identifier.</param>
+    /// <param name="displayName">Display name shown in the mod list.</param>
+    /// <param name="build">Callback that populates menu controls for the mod.</param>
+    /// <param name="sortOrder">Sort priority; lower values appear first.</param>
+    /// <param name="tabButtonSpriteName">SpriteManager sprite name for the tab button background.</param>
+    public static void Register(string id, string displayName, Action<ModMenuBuilder> build, int sortOrder,
+        string tabButtonSpriteName)
+    {
+        RegisterSection(id, displayName, PrimarySectionId, build, sortOrder, null, tabButtonSpriteName);
     }
 
     /// <summary>
@@ -41,12 +68,17 @@ public static class ModMenuRegistry
             return;
         }
 
-        RegisterSection(normalizedId, normalizedId, sectionId,
-            builder => build(new ModMenuSectionBuilderAdapter(builder)));
+        var existingEntry = FindEntry(normalizedId);
+        var displayName = existingEntry != null ? existingEntry.DisplayName : normalizedId;
+        var sortOrder = existingEntry?.SortOrder ?? 0;
+
+        RegisterSection(normalizedId, displayName, sectionId,
+            builder => build(new ModMenuSectionBuilderAdapter(builder)), sortOrder, null, null, false);
     }
 
     private static void RegisterSection(string id, string displayName, string sectionId, Action<ModMenuBuilder> build,
-        int sortOrder = 0)
+        int sortOrder = 0, Sprite tabButtonSprite = null, string tabButtonSpriteName = null,
+        bool updateTabButtonSprite = true)
     {
         if (!TryNormalizeKey(id, out var normalizedId))
         {
@@ -71,12 +103,17 @@ public static class ModMenuRegistry
         if (entry == null)
         {
             entry = new ModMenuEntry(normalizedId, normalizedName, sortOrder);
-            Entries.Add(entry);
+            entry.SetTabButtonSprite(tabButtonSprite, tabButtonSpriteName);
+            _entries.Add(entry);
         }
         else
         {
             entry.DisplayName = normalizedName;
             entry.SortOrder = sortOrder;
+            if (updateTabButtonSprite)
+            {
+                entry.SetTabButtonSprite(tabButtonSprite, tabButtonSpriteName);
+            }
         }
 
         entry.SetSection(normalizedSection, build);
@@ -95,7 +132,7 @@ public static class ModMenuRegistry
             return false;
         }
 
-        var removed = Entries.RemoveAll(entry =>
+        var removed = _entries.RemoveAll(entry =>
             entry.Id.Equals(normalizedId, StringComparison.OrdinalIgnoreCase));
         if (removed <= 0)
         {
@@ -138,7 +175,7 @@ public static class ModMenuRegistry
 
         if (!entry.HasSections)
         {
-            Entries.Remove(entry);
+            _entries.Remove(entry);
         }
 
         Version++;
@@ -147,19 +184,14 @@ public static class ModMenuRegistry
 
     internal static IReadOnlyList<ModMenuEntry> GetEntries()
     {
-        return Entries;
+        return _entries;
     }
 
     internal static Dictionary<string, List<Action<ModMenuBuilder>>> GetModOptionsById()
     {
         var modOptions = new Dictionary<string, List<Action<ModMenuBuilder>>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in Entries)
+        foreach (var entry in _entries.Where(entry => entry != null && !string.IsNullOrWhiteSpace(entry.Id)))
         {
-            if (entry == null || string.IsNullOrWhiteSpace(entry.Id))
-            {
-                continue;
-            }
-
             modOptions[entry.Id] = entry.GetSectionBuildActions();
         }
 
@@ -168,12 +200,7 @@ public static class ModMenuRegistry
 
     internal static ModMenuEntry FindEntry(string id)
     {
-        if (!TryNormalizeKey(id, out var normalizedId))
-        {
-            return null;
-        }
-
-        return Entries.FirstOrDefault(entry => entry.Id.Equals(normalizedId, StringComparison.OrdinalIgnoreCase));
+        return !TryNormalizeKey(id, out var normalizedId) ? null : _entries.FirstOrDefault(entry => entry.Id.Equals(normalizedId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryNormalizeKey(string value, out string normalizedValue)
@@ -203,6 +230,8 @@ internal sealed class ModMenuEntry
     internal string Id { get; }
     internal string DisplayName { get; set; }
     internal int SortOrder { get; set; }
+    internal Sprite TabButtonSprite { get; private set; }
+    internal string TabButtonSpriteName { get; private set; }
     internal bool HasSections => _sections.Count > 0;
 
     internal void Build(ModMenuBuilder builder)
@@ -238,18 +267,16 @@ internal sealed class ModMenuEntry
         return true;
     }
 
+    internal void SetTabButtonSprite(Sprite sprite, string spriteName)
+    {
+        TabButtonSprite = sprite;
+        TabButtonSpriteName = string.IsNullOrWhiteSpace(spriteName) ? null : spriteName.Trim();
+    }
+
     internal List<Action<ModMenuBuilder>> GetSectionBuildActions()
     {
         var sectionBuilds = new List<Action<ModMenuBuilder>>(_sections.Count);
-        foreach (var section in _sections)
-        {
-            if (section.Build == null)
-            {
-                continue;
-            }
-
-            sectionBuilds.Add(section.Build);
-        }
+        sectionBuilds.AddRange(from section in _sections where section.Build != null select section.Build);
 
         return sectionBuilds;
     }

@@ -8,17 +8,17 @@ namespace SurvivorModMenu.ModMenu;
 internal struct ModMenuTextStyle
 {
     /// <summary>True when TextMeshPro should be used instead of legacy UI Text.</summary>
-    internal bool isTmp;
+    internal bool IsTmp;
 
     /// <summary>Template TMP font for menu text.</summary>
-    internal TMP_FontAsset tmpFont;
+    internal TMP_FontAsset TMPFont;
 
     /// <summary>Template legacy UI font used when TMP is unavailable.</summary>
-    internal Font uiFont;
+    internal Font UIFont;
 
     /// <summary>Base font size used by generated labels/buttons.</summary>
-    internal float fontSize;
+    internal float FontSize;
 
     /// <summary>Template text color used by generated labels/buttons.</summary>
-    internal Color color;
+    internal Color Color;
 }

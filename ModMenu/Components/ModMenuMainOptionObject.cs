@@ -1,6 +1,9 @@
 
 namespace SurvivorModMenu.ModMenu.Components;
 
+/// <summary>
+/// Tracks the logical option row that owns one or more navigation targets.
+/// </summary>
 [RegisterTypeInIl2Cpp]
 public sealed class ModMenuMainOptionObject : MonoBehaviour
 {
@@ -9,43 +12,45 @@ public sealed class ModMenuMainOptionObject : MonoBehaviour
     }
 
     private RectTransform _rootRect;
-    private float _localY;
     private readonly List<ModMenuSelectable> _subTargets = new();
 
-    internal float LocalY => _localY;
-    internal RectTransform RootRect => _rootRect;
-    internal List<ModMenuSelectable> SubTargets => _subTargets;
+    [HideFromIl2Cpp]
+    internal float LocalY { get; private set; }
 
+    [HideFromIl2Cpp]
     internal void Configure(RectTransform rootRect, RectTransform referenceRect)
     {
         _rootRect = rootRect;
         UpdateLocalY(referenceRect);
     }
 
+    [HideFromIl2Cpp]
     internal void UpdateLocalY(RectTransform referenceRect)
     {
         if (_rootRect == null)
         {
-            _localY = 0f;
+            LocalY = 0f;
             return;
         }
 
         if (referenceRect == null)
         {
-            _localY = _rootRect.anchoredPosition.y;
+            LocalY = _rootRect.anchoredPosition.y;
             return;
         }
 
         var worldCenter = _rootRect.TransformPoint(_rootRect.rect.center);
         var localPoint = referenceRect.InverseTransformPoint(worldCenter);
-        _localY = localPoint.y;
+        LocalY = localPoint.y;
     }
 
+    [HideFromIl2Cpp]
     internal void ClearSubTargets()
     {
         _subTargets.Clear();
     }
 
+    [HideFromIl2Cpp]
     internal void RegisterSubTarget(ModMenuSelectable target)
     {
         if (target == null)
@@ -53,13 +58,8 @@ public sealed class ModMenuMainOptionObject : MonoBehaviour
             return;
         }
 
-        foreach (var existingTarget in _subTargets)
+        if (_subTargets.Any(existingTarget => ReferenceEquals(existingTarget, target)))
         {
-            if (!ReferenceEquals(existingTarget, target))
-            {
-                continue;
-            }
-
             return;
         }
 

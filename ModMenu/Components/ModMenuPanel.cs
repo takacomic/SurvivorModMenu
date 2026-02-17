@@ -1,6 +1,10 @@
 
 namespace SurvivorModMenu.ModMenu.Components;
 
+/// <summary>
+/// Navigation helper bound to a scrollable panel. It knows which targets belong to the panel
+/// and can move the panel viewport to keep a selected target visible.
+/// </summary>
 [RegisterTypeInIl2Cpp]
 public sealed class ModMenuPanel : MonoBehaviour
 {
@@ -8,7 +12,7 @@ public sealed class ModMenuPanel : MonoBehaviour
     {
     }
 
-    private static readonly Vector3[] CornerBuffer = new Vector3[4];
+    private static readonly Vector3[] _cornerBuffer = new Vector3[4];
     private readonly List<ModMenuSelectable> _targets = new();
 
     private ScrollRect _scrollRect;
@@ -16,19 +20,22 @@ public sealed class ModMenuPanel : MonoBehaviour
     private RectTransform _viewport;
     private RectMask2D _viewportMask;
 
+    [HideFromIl2Cpp]
     internal void Configure(ScrollRect scrollRect)
     {
         _scrollRect = scrollRect;
         _panelRect = GetComponent<RectTransform>();
         _viewport = scrollRect?.viewport;
-        _viewportMask = _viewport != null ? _viewport.GetComponent<RectMask2D>() : null;
+        _viewportMask = _viewport?.GetComponent<RectMask2D>();
     }
 
+    [HideFromIl2Cpp]
     internal void BeginTargetRegistration()
     {
         _targets.Clear();
     }
 
+    [HideFromIl2Cpp]
     internal void RegisterTarget(ModMenuSelectable target)
     {
         if (target == null || !target.IsValid())
@@ -41,52 +48,23 @@ public sealed class ModMenuPanel : MonoBehaviour
             return;
         }
 
-        foreach (var existingTarget in _targets)
+        if (_targets.Any(existingTarget => ReferenceEquals(existingTarget, target)))
         {
-            if (!ReferenceEquals(existingTarget, target))
-            {
-                continue;
-            }
-
             return;
         }
 
         _targets.Add(target);
     }
 
-    internal bool ContainsTarget(ModMenuSelectable target)
-    {
-        if (target == null)
-        {
-            return false;
-        }
-
-        foreach (var existingTarget in _targets)
-        {
-            if (!ReferenceEquals(existingTarget, target))
-            {
-                continue;
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
+    [HideFromIl2Cpp]
     internal ModMenuSelectable FindTopMostTarget(bool optionOnly)
     {
         ModMenuSelectable bestTarget = null;
         var bestY = float.NegativeInfinity;
         var bestX = float.PositiveInfinity;
 
-        foreach (var target in _targets)
+        foreach (var target in _targets.Where(target => IsEligibleTarget(target, currentTarget: null, optionOnly)))
         {
-            if (!IsEligibleTarget(target, currentTarget: null, optionOnly))
-            {
-                continue;
-            }
-
             if (!TryGetCenterInPanelSpace(target.AnchorRect, out var center))
             {
                 continue;
@@ -111,6 +89,7 @@ public sealed class ModMenuPanel : MonoBehaviour
         return bestTarget;
     }
 
+    [HideFromIl2Cpp]
     internal ModMenuSelectable FindDirectionalTarget(
         ModMenuSelectable currentTarget,
         Vector2 direction,
@@ -136,13 +115,8 @@ public sealed class ModMenuPanel : MonoBehaviour
         ModMenuSelectable bestTarget = null;
         var bestScore = float.MaxValue;
 
-        foreach (var target in _targets)
+        foreach (var target in _targets.Where(target => IsEligibleTarget(target, currentTarget, optionOnly)))
         {
-            if (!IsEligibleTarget(target, currentTarget, optionOnly))
-            {
-                continue;
-            }
-
             if (!TryGetCenterInPanelSpace(target.AnchorRect, out var targetCenter))
             {
                 continue;
@@ -156,7 +130,8 @@ public sealed class ModMenuPanel : MonoBehaviour
 
             var primaryDistance = verticalDirection ? Mathf.Abs(delta.y) : Mathf.Abs(delta.x);
             var lateralDistance = verticalDirection ? Mathf.Abs(delta.x) : Mathf.Abs(delta.y);
-            var score = (primaryDistance * 1000f) + (lateralDistance * 12f) + (delta.sqrMagnitude * 0.05f);
+            var score = (primaryDistance * 1000f) + (lateralDistance * 12f) +
+                        (delta.sqrMagnitude * 0.05f);
             if (score >= bestScore)
             {
                 continue;
@@ -169,6 +144,7 @@ public sealed class ModMenuPanel : MonoBehaviour
         return bestTarget;
     }
 
+    [HideFromIl2Cpp]
     internal ModMenuSelectable FindAdjacentVerticalTarget(
         ModMenuSelectable currentTarget,
         bool moveUp,
@@ -188,27 +164,19 @@ public sealed class ModMenuPanel : MonoBehaviour
         var bestPrimary = float.MaxValue;
         var bestSecondary = float.MaxValue;
 
-        foreach (var target in _targets)
+        foreach (var target in _targets.Where(target => IsEligibleTarget(target, currentTarget, optionOnly)))
         {
-            if (!IsEligibleTarget(target, currentTarget, optionOnly))
-            {
-                continue;
-            }
-
             if (!TryGetCenterInPanelSpace(target.AnchorRect, out var targetCenter))
             {
                 continue;
             }
 
             var deltaY = targetCenter.y - currentCenter.y;
-            if (moveUp && deltaY <= 0.01f)
+            switch (moveUp)
             {
-                continue;
-            }
-
-            if (!moveUp && deltaY >= -0.01f)
-            {
-                continue;
+                case true when deltaY <= 0.01f:
+                case false when deltaY >= -0.01f:
+                    continue;
             }
 
             var primaryDistance = Mathf.Abs(deltaY);
@@ -232,6 +200,10 @@ public sealed class ModMenuPanel : MonoBehaviour
         return bestTarget;
     }
 
+    /// <summary>
+    /// Scrolls this panel so the target rect is fully visible inside the masked viewport.
+    /// </summary>
+    [HideFromIl2Cpp]
     internal bool EnsureVisible(RectTransform targetRect, float padding)
     {
         if (_scrollRect == null || targetRect == null)
@@ -247,30 +219,77 @@ public sealed class ModMenuPanel : MonoBehaviour
             return false;
         }
 
-        var movedAny = false;
-        for (var attempt = 0; attempt < 3; attempt++)
+        LayoutRebuilder.ForceRebuildLayoutImmediate(content);
+        Canvas.ForceUpdateCanvases();
+
+        var maskRect = _viewportMask != null ? _viewportMask.rectTransform : viewport;
+        if (maskRect == null)
         {
-            if (!TryResolveScrollDelta(content, viewport, targetRect, padding, out var deltaY))
-            {
-                break;
-            }
-
-            if (Mathf.Abs(deltaY) <= 0.01f)
-            {
-                break;
-            }
-
-            if (!ApplyScrollDelta(content, viewport, deltaY))
-            {
-                break;
-            }
-
-            movedAny = true;
+            return false;
         }
 
-        return movedAny;
+        if (!TryGetVerticalBoundsInSpace(content, targetRect, out var targetTop, out var targetBottom))
+        {
+            return false;
+        }
+
+        if (!TryGetVerticalBoundsInSpace(content, maskRect, out var viewportTop, out var viewportBottom))
+        {
+            return false;
+        }
+
+        var viewportHeight = Mathf.Abs(viewportTop - viewportBottom);
+        if (viewportHeight <= 0.01f)
+        {
+            return false;
+        }
+
+        var maxScrollY = ResolveMaxScrollY(content, viewport);
+        if (maxScrollY <= 0.01f)
+        {
+            return false;
+        }
+
+        // Convert world-space values into a top-origin scroll axis so clamping is stable
+        // regardless of pivot/anchor setup on the content rect.
+        var contentTop = content.rect.yMax;
+        var targetTopFromTop = contentTop - targetTop;
+        var targetBottomFromTop = contentTop - targetBottom;
+        var viewportTopFromTop = contentTop - viewportTop;
+        var viewportBottomFromTop = contentTop - viewportBottom;
+
+        var needsScrollUp = targetTopFromTop < viewportTopFromTop + padding;
+        var needsScrollDown = targetBottomFromTop > viewportBottomFromTop - padding;
+        if (!needsScrollUp && !needsScrollDown)
+        {
+            return false;
+        }
+
+        float desiredTopFromTop;
+        if (needsScrollUp)
+        {
+            desiredTopFromTop = targetTopFromTop - padding;
+        }
+        else
+        {
+            desiredTopFromTop = targetBottomFromTop + padding - viewportHeight;
+        }
+
+        desiredTopFromTop = Mathf.Clamp(desiredTopFromTop, 0f, maxScrollY);
+        var targetNormalized = Mathf.Clamp01(1f - (desiredTopFromTop / maxScrollY));
+        if (Mathf.Abs(_scrollRect.verticalNormalizedPosition - targetNormalized) <= 0.0005f)
+        {
+            return false;
+        }
+
+        _scrollRect.StopMovement();
+        _scrollRect.velocity = Vector2.zero;
+        _scrollRect.verticalNormalizedPosition = targetNormalized;
+        Canvas.ForceUpdateCanvases();
+        return true;
     }
 
+    [HideFromIl2Cpp]
     private static bool IsEligibleTarget(ModMenuSelectable target,
         ModMenuSelectable currentTarget, bool optionOnly)
     {
@@ -284,14 +303,10 @@ public sealed class ModMenuPanel : MonoBehaviour
             return false;
         }
 
-        if (optionOnly && !target.IsOptionObject)
-        {
-            return false;
-        }
-
-        return true;
+        return !optionOnly || target.IsOptionObject;
     }
 
+    [HideFromIl2Cpp]
     private bool TryGetCenterInPanelSpace(RectTransform targetRect, out Vector2 center)
     {
         center = Vector2.zero;
@@ -306,128 +321,30 @@ public sealed class ModMenuPanel : MonoBehaviour
         return true;
     }
 
-    private bool TryResolveScrollDelta(RectTransform content, RectTransform viewport, RectTransform targetRect,
-        float padding, out float deltaY)
-    {
-        deltaY = 0f;
-        if (content == null || viewport == null || targetRect == null)
-        {
-            return false;
-        }
-
-        LayoutRebuilder.ForceRebuildLayoutImmediate(content);
-        Canvas.ForceUpdateCanvases();
-
-        var maskRect = _viewportMask != null ? _viewportMask.rectTransform : viewport;
-        if (TryResolveScrollDeltaInSpace(maskRect, maskRect, targetRect, padding, out deltaY))
-        {
-            if (Mathf.Abs(deltaY) > 0.01f)
-            {
-                return true;
-            }
-        }
-
-        if (_panelRect != null && TryResolveScrollDeltaInSpace(_panelRect, viewport, targetRect, padding, out deltaY))
-        {
-            if (Mathf.Abs(deltaY) > 0.01f)
-            {
-                return true;
-            }
-        }
-
-        deltaY = 0f;
-        return true;
-    }
-
-    private static bool TryResolveScrollDeltaInSpace(RectTransform referenceRect, RectTransform viewportRect,
-        RectTransform targetRect, float padding, out float deltaY)
-    {
-        deltaY = 0f;
-        if (referenceRect == null || viewportRect == null || targetRect == null)
-        {
-            return false;
-        }
-
-        if (!TryGetVerticalBoundsInSpace(referenceRect, targetRect, out var targetTop, out var targetBottom))
-        {
-            return false;
-        }
-
-        if (!TryGetVerticalBoundsInSpace(referenceRect, viewportRect, out var viewportTopRaw, out var viewportBottomRaw))
-        {
-            return false;
-        }
-
-        var viewportTop = viewportTopRaw - padding;
-        var viewportBottom = viewportBottomRaw + padding;
-        if (targetTop > viewportTop)
-        {
-            deltaY = targetTop - viewportTop;
-            return true;
-        }
-
-        if (targetBottom < viewportBottom)
-        {
-            deltaY = targetBottom - viewportBottom;
-            return true;
-        }
-
-        return true;
-    }
-
+    [HideFromIl2Cpp]
     private static bool TryGetVerticalBoundsInSpace(RectTransform referenceRect, RectTransform targetRect, out float top,
         out float bottom)
     {
-        top = float.NegativeInfinity;
-        bottom = float.PositiveInfinity;
+        top = 0f;
+        bottom = 0f;
         if (referenceRect == null || targetRect == null)
         {
             return false;
         }
 
-        targetRect.GetWorldCorners(CornerBuffer);
-        for (var index = 0; index < CornerBuffer.Length; index++)
-        {
-            var localPoint = referenceRect.InverseTransformPoint(CornerBuffer[index]);
-            if (localPoint.y > top)
-            {
-                top = localPoint.y;
-            }
+        var rect = targetRect.rect;
+        var x = rect.center.x;
+        var topWorld = targetRect.TransformPoint(new Vector3(x, rect.yMax, 0f));
+        var bottomWorld = targetRect.TransformPoint(new Vector3(x, rect.yMin, 0f));
 
-            if (localPoint.y < bottom)
-            {
-                bottom = localPoint.y;
-            }
-        }
-
-        return !float.IsInfinity(top) && !float.IsInfinity(bottom);
-    }
-
-    private bool ApplyScrollDelta(RectTransform content, RectTransform viewport, float deltaY)
-    {
-        var maxScrollY = ResolveMaxScrollY(content, viewport);
-        if (maxScrollY <= 0.01f)
-        {
-            return false;
-        }
-
-        _scrollRect.StopMovement();
-
-        var anchoredPosition = content.anchoredPosition;
-        var nextY = Mathf.Clamp(anchoredPosition.y - deltaY, 0f, maxScrollY);
-        if (Mathf.Abs(nextY - anchoredPosition.y) <= 0.01f)
-        {
-            return false;
-        }
-
-        anchoredPosition.y = nextY;
-        content.anchoredPosition = anchoredPosition;
-        _scrollRect.velocity = Vector2.zero;
-        _scrollRect.verticalNormalizedPosition = Mathf.Clamp01(1f - (nextY / maxScrollY));
-        Canvas.ForceUpdateCanvases();
+        var topLocal = referenceRect.InverseTransformPoint(topWorld);
+        var bottomLocal = referenceRect.InverseTransformPoint(bottomWorld);
+        top = Mathf.Max(topLocal.y, bottomLocal.y);
+        bottom = Mathf.Min(topLocal.y, bottomLocal.y);
         return true;
     }
 
+    [HideFromIl2Cpp]
     private static float ResolveMaxScrollY(RectTransform content, RectTransform viewport)
     {
         if (content == null || viewport == null)
@@ -446,6 +363,7 @@ public sealed class ModMenuPanel : MonoBehaviour
         return Mathf.Max(0f, contentHeight - viewport.rect.height);
     }
 
+    [HideFromIl2Cpp]
     private static float ResolveChildBoundsHeight(RectTransform parent)
     {
         if (parent == null)
@@ -464,10 +382,10 @@ public sealed class ModMenuPanel : MonoBehaviour
                 continue;
             }
 
-            child.GetWorldCorners(CornerBuffer);
-            for (var cornerIndex = 0; cornerIndex < CornerBuffer.Length; cornerIndex++)
+            child.GetWorldCorners(_cornerBuffer);
+            foreach (var t in _cornerBuffer)
             {
-                var localPoint = parent.InverseTransformPoint(CornerBuffer[cornerIndex]);
+                var localPoint = parent.InverseTransformPoint(t);
                 if (localPoint.y < minY)
                 {
                     minY = localPoint.y;

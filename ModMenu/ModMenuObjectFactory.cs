@@ -72,12 +72,7 @@ internal static class ModMenuObjectFactory
 
         // Centralized helper to avoid component duplication when rebuilding menu UI.
         var component = obj.GetComponent<T>();
-        if (component != null)
-        {
-            return component;
-        }
-
-        return obj.AddComponent<T>();
+        return component != null ? component : obj.AddComponent<T>();
     }
 
     internal static LayoutElement GetOrAddLayoutElement(GameObject obj)
