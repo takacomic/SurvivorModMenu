@@ -836,6 +836,223 @@ public sealed class ModMenuBuilder
     }
 
     /// <summary>
+    /// Adds a button row that opens a dedicated supplemental overlay page.
+    /// The opened page can contain normal controls and is dismissed with a back button.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row and in the overlay title.</param>
+    /// <param name="build">Callback used to populate the supplemental overlay page.</param>
+    /// <returns>The created page trigger button.</returns>
+    public Button AddSupplementPage(string label, Action<ModMenuBuilder> build)
+    {
+        const float overlaySidePadding = 34f;
+        const float overlayTopPadding = 106f;
+        const float overlayBottomPadding = 132f;
+        const float overlayTitleTop = 30f;
+        const float overlayTitleHeight = 56f;
+        const float overlayOptionSpacing = 10f;
+        const float overlayScrollbarWidth = 12f;
+        const float overlayScrollbarPadding = 6f;
+        const float backButtonBottom = 24f;
+        const float backButtonWidth = 240f;
+
+        var pageLabel = string.IsNullOrWhiteSpace(label) ? "Supplement" : label.Trim();
+        var rowHeight = Mathf.Max(DefaultRowHeight, ActionButtonHeight + ActionButtonRowPadding);
+        var row = CreateRow($"SupplementPage_{pageLabel}", rowHeight);
+        CreateRowLabel(row, pageLabel);
+
+        var triggerButton = CreateButton(row, "SupplementPageButton", "OPEN", _gray, _lightGray, _blue, _dark);
+        if (triggerButton == null)
+        {
+            return null;
+        }
+
+        ConfigureControlRect(triggerButton.GetComponent<RectTransform>(), 0.58f, 1f, ActionButtonHeight);
+        ApplyActionButtonSprite(triggerButton);
+
+        if (build == null)
+        {
+            triggerButton.interactable = false;
+            return triggerButton;
+        }
+
+        var panelRect = FindAncestorRectByName(ContentRoot, "Panel") ?? ContentRoot;
+        var overlayName = $"SupplementOverlay_{SanitizeNameSegment(pageLabel)}";
+        var overlayRect = ModMenuObjectFactory.CreateRect(overlayName, panelRect);
+        var overlayRoot = overlayRect.gameObject;
+        overlayRect.anchorMin = Vector2.zero;
+        overlayRect.anchorMax = Vector2.one;
+        overlayRect.pivot = new Vector2(0.5f, 0.5f);
+        overlayRect.offsetMin = Vector2.zero;
+        overlayRect.offsetMax = Vector2.zero;
+
+        var overlayLayout = ModMenuObjectFactory.GetOrAddLayoutElement(overlayRoot);
+        overlayLayout.ignoreLayout = true;
+        overlayLayout.preferredHeight = 0f;
+        overlayLayout.minHeight = 0f;
+
+        var overlayBlocker = ModMenuObjectFactory.GetOrAddComponent<Image>(overlayRoot);
+        overlayBlocker.color = new Color(0f, 0f, 0f, 0.001f);
+        overlayBlocker.raycastTarget = true;
+
+        var overlayPanelImage = ModMenuObjectFactory.CreateImage("SupplementPanel", overlayRect, out var overlayPanelRect);
+        StretchToParent(overlayPanelRect);
+        ApplyFramePanelStyle(overlayPanelImage);
+
+        var titleObject = CreateTextObject(overlayPanelRect, pageLabel.ToUpperInvariant(), _textStyle, OptionLabelFontSize,
+            TextAnchor.MiddleCenter, TextAlignmentOptions.Center);
+        var titleRect = titleObject.GetComponent<RectTransform>();
+        if (titleRect != null)
+        {
+            titleRect.anchorMin = new Vector2(0.5f, 1f);
+            titleRect.anchorMax = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.anchoredPosition = new Vector2(0f, -overlayTitleTop);
+            titleRect.sizeDelta = new Vector2(Mathf.Max(220f, panelRect.rect.width - 120f), overlayTitleHeight);
+        }
+
+        var listScrollRect = ModMenuObjectFactory.CreateScrollRect("SupplementOptionsScroll", overlayPanelRect,
+            out var listRootRect);
+        listRootRect.anchorMin = new Vector2(0f, 0f);
+        listRootRect.anchorMax = new Vector2(1f, 1f);
+        listRootRect.offsetMin = new Vector2(overlaySidePadding, overlayBottomPadding);
+        listRootRect.offsetMax = new Vector2(-overlaySidePadding, -overlayTopPadding);
+
+        listScrollRect.horizontal = false;
+        listScrollRect.vertical = true;
+        listScrollRect.inertia = true;
+        listScrollRect.movementType = ScrollRect.MovementType.Clamped;
+        listScrollRect.scrollSensitivity = 20f;
+
+        var viewportImage = ModMenuObjectFactory.CreateImage("Viewport", listRootRect, out var viewportRect);
+        viewportRect.anchorMin = Vector2.zero;
+        viewportRect.anchorMax = Vector2.one;
+        viewportRect.offsetMin = Vector2.zero;
+        viewportRect.offsetMax = new Vector2(-(overlayScrollbarWidth + overlayScrollbarPadding), 0f);
+        viewportImage.color = new Color(0f, 0f, 0f, 0.001f);
+        viewportImage.raycastTarget = true;
+        ModMenuObjectFactory.GetOrAddRectMask2D(viewportRect.gameObject);
+
+        var contentRect = ModMenuObjectFactory.CreateRect("Content", viewportRect);
+        contentRect.anchorMin = new Vector2(0f, 1f);
+        contentRect.anchorMax = new Vector2(1f, 1f);
+        contentRect.pivot = new Vector2(0.5f, 1f);
+        contentRect.anchoredPosition = Vector2.zero;
+        contentRect.sizeDelta = Vector2.zero;
+
+        var listLayout = ModMenuObjectFactory.GetOrAddVerticalLayoutGroup(contentRect.gameObject);
+        listLayout.childControlWidth = true;
+        listLayout.childControlHeight = false;
+        listLayout.childForceExpandWidth = true;
+        listLayout.childForceExpandHeight = false;
+        listLayout.spacing = overlayOptionSpacing;
+        listLayout.padding = new RectOffset(0, 0, 0, 0);
+
+        var listFitter = ModMenuObjectFactory.GetOrAddContentSizeFitter(contentRect.gameObject);
+        listFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        listFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        listScrollRect.viewport = viewportRect;
+        listScrollRect.content = contentRect;
+
+        var scrollbar = CreateSupplementScrollbar(listRootRect);
+        listScrollRect.verticalScrollbar = scrollbar;
+        listScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+        var pageBuilder = new ModMenuBuilder(contentRect, _textStyle, _addClickListener);
+        try
+        {
+            build(pageBuilder);
+        }
+        catch (Exception exception)
+        {
+            MelonLogger.Error($"[SurvivorModMenu] Failed building supplement page '{pageLabel}': {exception}");
+        }
+
+        if (contentRect.childCount <= 0)
+        {
+            pageBuilder.AddLabel("No options registered.");
+        }
+
+        var backButton = CreateButton(overlayPanelRect, "SupplementBackButton", "BACK", _gray, _lightGray, _blue, _dark);
+        if (backButton != null)
+        {
+            var backRect = backButton.GetComponent<RectTransform>();
+            if (backRect != null)
+            {
+                backRect.anchorMin = new Vector2(0.5f, 0f);
+                backRect.anchorMax = new Vector2(0.5f, 0f);
+                backRect.pivot = new Vector2(0.5f, 0f);
+                backRect.anchoredPosition = new Vector2(0f, backButtonBottom);
+                backRect.sizeDelta = new Vector2(backButtonWidth, ActionButtonHeight);
+            }
+
+            ApplyActionButtonSprite(backButton);
+            AddButtonClick(backButton, () => SetOverlayOpen(false));
+        }
+
+        SetOverlayOpen(false);
+
+        AddButtonClick(triggerButton, () =>
+        {
+            SetOverlayOpen(true);
+        });
+
+        return triggerButton;
+
+        void SetOverlayOpen(bool open)
+        {
+            overlayRoot.SetActive(open);
+            if (!open)
+            {
+                return;
+            }
+
+            overlayRect.SetAsLastSibling();
+            overlayPanelRect.SetAsLastSibling();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
+            Canvas.ForceUpdateCanvases();
+            listScrollRect.verticalNormalizedPosition = 1f;
+        }
+
+        Scrollbar CreateSupplementScrollbar(RectTransform parent)
+        {
+            var createdScrollbar = ModMenuObjectFactory.CreateScrollbar("SupplementScrollbar", parent, out var scrollbarRect,
+                out var trackImage);
+            scrollbarRect.anchorMin = new Vector2(1f, 0f);
+            scrollbarRect.anchorMax = new Vector2(1f, 1f);
+            scrollbarRect.pivot = new Vector2(1f, 0.5f);
+            scrollbarRect.offsetMin = new Vector2(-overlayScrollbarWidth, 0f);
+            scrollbarRect.offsetMax = Vector2.zero;
+
+            ApplyRoundedImage(trackImage);
+            trackImage.color = _sliderTrackDarkGray;
+            trackImage.raycastTarget = true;
+
+            createdScrollbar.direction = Scrollbar.Direction.BottomToTop;
+
+            var slidingAreaRect = ModMenuObjectFactory.CreateRect("Sliding Area", scrollbarRect);
+            slidingAreaRect.anchorMin = Vector2.zero;
+            slidingAreaRect.anchorMax = Vector2.one;
+            slidingAreaRect.offsetMin = new Vector2(2f, 2f);
+            slidingAreaRect.offsetMax = new Vector2(-2f, -2f);
+
+            var handleImage = ModMenuObjectFactory.CreateImage("Handle", slidingAreaRect, out var handleRect);
+            StretchToParent(handleRect);
+
+            ApplyRoundedImage(handleImage);
+            handleImage.color = new Color(0.35f, 0.64f, 0.95f, 0.95f);
+            handleImage.raycastTarget = true;
+
+            createdScrollbar.targetGraphic = handleImage;
+            createdScrollbar.handleRect = handleRect;
+            createdScrollbar.size = 0.2f;
+            createdScrollbar.value = 1f;
+
+            return createdScrollbar;
+        }
+    }
+
+    /// <summary>
     /// Adds vertical spacing between rows.
     /// </summary>
     /// <param name="height">Requested spacer height in UI units.</param>
@@ -1181,6 +1398,34 @@ public sealed class ModMenuBuilder
         }
 
         return null;
+    }
+
+    private static string SanitizeNameSegment(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Supplement";
+        }
+
+        var characters = value.Trim();
+        var builder = new System.Text.StringBuilder(characters.Length);
+        foreach (var character in characters)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(character);
+                continue;
+            }
+
+            builder.Append('_');
+        }
+
+        if (builder.Length == 0)
+        {
+            return "Supplement";
+        }
+
+        return builder.ToString();
     }
 
     private static void ApplyInputFrameStyle(Image image)

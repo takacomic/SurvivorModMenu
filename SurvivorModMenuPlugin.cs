@@ -16,7 +16,7 @@ internal static class BuildInfo
     internal const string Name = "SurvivorModMenu";
     internal const string Author = "Takacomic";
     internal const string Version = "1.0.0";
-    internal const string Download = "https://github.com/takacomic";
+    internal const string Download = "https://github.com/takacomic/SurvivorModMenu/releases/latest/";
 }
 
 public sealed class SurvivorModMenuPlugin : MelonPlugin

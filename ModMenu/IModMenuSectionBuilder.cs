@@ -120,6 +120,14 @@ public interface IModMenuSectionBuilder
         Action<int> setSelectedIndex);
 
     /// <summary>
+    /// Adds a button row that opens a dedicated supplemental overlay page.
+    /// The opened page can contain normal section controls and is dismissed with a back button.
+    /// </summary>
+    /// <param name="label">Display label shown on the left side of the row and in the overlay title.</param>
+    /// <param name="build">Callback used to populate overlay page controls.</param>
+    public void AddSupplementPage(string label, Action<IModMenuSectionBuilder> build);
+
+    /// <summary>
     /// Adds vertical spacing between rows.
     /// </summary>
     /// <param name="height">Requested spacer height in UI units.</param>
@@ -190,6 +198,19 @@ internal sealed class ModMenuSectionBuilderAdapter : IModMenuSectionBuilder
         Action<int> setSelectedIndex)
     {
         return _builder.AddDropdown(label, options, getSelectedIndex, setSelectedIndex);
+    }
+
+    public void AddSupplementPage(string label, Action<IModMenuSectionBuilder> build)
+    {
+        if (build == null)
+        {
+            return;
+        }
+
+        _builder.AddSupplementPage(label, nestedBuilder =>
+        {
+            build(new ModMenuSectionBuilderAdapter(nestedBuilder));
+        });
     }
 
     public void AddSpacer(float height)

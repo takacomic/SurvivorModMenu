@@ -133,6 +133,7 @@ Section builder interface:
 - `IModMenuSectionBuilder.AddFloatSlider(...)`
 - `IModMenuSectionBuilder.AddDoubleSlider(...)`
 - `IModMenuSectionBuilder.AddDropdown(...)`
+- `IModMenuSectionBuilder.AddSupplementPage(string label, Action<IModMenuSectionBuilder> build)`
 - `IModMenuSectionBuilder.AddSpacer(float height)`
 
 ## Notes
@@ -141,5 +142,6 @@ Section builder interface:
 - Re-registering the same `id` + `sectionId` replaces that section.
 - The plugin updates itself in `OnUpdate` and discovers/builds UI automatically.
 - Dropdowns open a dedicated overlay panel above the menu content.
+- Supplement pages open a dedicated overlay panel with a `BACK` action.
 - Float/double sliders use `0.01` step and include manual numeric input fields.
 - Typed field and slider input submission is processed on Enter.

@@ -622,11 +622,11 @@ internal static class ModMenuController
         _listNavigationPanel?.BeginTargetRegistration();
         _contentNavigationPanel?.BeginTargetRegistration();
 
-        // Dropdown overlays temporarily replace normal option navigation so only overlay controls
-        // are reachable while the overlay is open.
-        if (TryGetActiveDropdownOverlay(out var activeDropdownOverlay))
+        // Overlays temporarily replace normal option navigation so only overlay controls
+        // are reachable while an overlay is open.
+        if (TryGetActiveOverlay(out var activeOverlay))
         {
-            AddDropdownOverlayNavigationTargets(activeDropdownOverlay);
+            AddOverlayNavigationTargets(activeOverlay);
             if (_navigationTargets.Count > 0)
             {
                 FinalizeNavigationTargets();
@@ -752,7 +752,7 @@ internal static class ModMenuController
         }
     }
 
-    private static bool TryGetActiveDropdownOverlay(out Transform overlayTransform)
+    private static bool TryGetActiveOverlay(out Transform overlayTransform)
     {
         overlayTransform = null;
         if (_panelRoot == null)
@@ -770,8 +770,14 @@ internal static class ModMenuController
             }
 
             var childName = child.name;
-            if (string.IsNullOrWhiteSpace(childName) ||
-                !childName.StartsWith("DropdownOverlay_", StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(childName))
+            {
+                continue;
+            }
+
+            var isDropdownOverlay = childName.StartsWith("DropdownOverlay_", StringComparison.Ordinal);
+            var isSupplementOverlay = childName.StartsWith("SupplementOverlay_", StringComparison.Ordinal);
+            if (!isDropdownOverlay && !isSupplementOverlay)
             {
                 continue;
             }
@@ -783,7 +789,7 @@ internal static class ModMenuController
         return false;
     }
 
-    private static void AddDropdownOverlayNavigationTargets(Transform overlayTransform)
+    private static void AddOverlayNavigationTargets(Transform overlayTransform)
     {
         if (overlayTransform == null)
         {
@@ -1510,7 +1516,7 @@ internal static class ModMenuController
             return;
         }
 
-        DestroyDropdownOverlays();
+        DestroyTransientOverlays();
         var pageRect = EnsureDynamicModPageRect();
         if (pageRect == null)
         {
@@ -1598,7 +1604,7 @@ internal static class ModMenuController
 
     private static void ClearDynamicModPage()
     {
-        DestroyDropdownOverlays();
+        DestroyTransientOverlays();
         if (_modPageRoot == null)
         {
             return;
@@ -1617,7 +1623,7 @@ internal static class ModMenuController
         }
     }
 
-    private static void DestroyDropdownOverlays()
+    private static void DestroyTransientOverlays()
     {
         if (_panelRoot == null)
         {
@@ -1635,7 +1641,14 @@ internal static class ModMenuController
             }
 
             var childName = child.name;
-            if (string.IsNullOrWhiteSpace(childName) || !childName.StartsWith("DropdownOverlay_", StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(childName))
+            {
+                continue;
+            }
+
+            var isDropdownOverlay = childName.StartsWith("DropdownOverlay_", StringComparison.Ordinal);
+            var isSupplementOverlay = childName.StartsWith("SupplementOverlay_", StringComparison.Ordinal);
+            if (!isDropdownOverlay && !isSupplementOverlay)
             {
                 continue;
             }
