@@ -134,8 +134,15 @@ internal static class ModMenuController
     private static RectTransform _enterCoopButtonRect;
     private static float _nextEnterCoopResolveTime;
 
+    private static string _sceneName;
+
     internal static void Update()
     {
+        if (!IsMainMenuScene(_sceneName))
+        {
+            return;
+        }
+
         EnsureEnterCoopButtonAnchorX();
         if (!IsReady())
         {
@@ -151,6 +158,7 @@ internal static class ModMenuController
 
     internal static void OnSceneWasLoaded(string sceneName)
     {
+        _sceneName = sceneName;
         if (!IsMainMenuScene(sceneName))
         {
             return;

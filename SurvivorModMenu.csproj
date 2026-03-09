@@ -81,9 +81,6 @@
         <Reference Include="Il2CppRewired_UnityUI_CSharp">
             <HintPath>$(Il2)/Il2CppRewired_UnityUI_CSharp.dll</HintPath>
         </Reference>
-        <Reference Include="FixNullableAttribute">
-            <HintPath>/mnt/data/SteamLibrary/steamapps/common/VSModded/UserLibs/FixNullableAttribute.dll</HintPath>
-        </Reference>
     </ItemGroup>
 
     <Target Name="PostBuild" AfterTargets="Build" Condition="'$(DisablePluginDeploy)' != 'true'">
